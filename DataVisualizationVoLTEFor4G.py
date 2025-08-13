@@ -24,7 +24,7 @@ class VoLTEKPIProcessor:
         self.cleaned_data = {}
         self.csv_files = {}
 
-        print("VOLTE KPI DATA PROCESSOR - CHARTS ONLY")
+        print("VOLTE KPI DATA PROCESSOR")
         print("=" * 70)
 
     def read_excel_file(self, excel_path):
@@ -613,14 +613,14 @@ class VoLTEKPIProcessor:
             plt.close()
             return None
 
-    def create_combined_charts_report(self, output_dir="output_charts"):
+    def create_comprehensive_report(self, output_dir="output_charts"):
         """
-        Tạo báo cáo tổng hợp tất cả biểu đồ vào 1 file PDF và 1 file PNG
+        Tạo báo cáo tổng hợp CHÍNH - không có dashboard, chỉ biểu đồ
         """
-        print(f"\n📋 Tạo báo cáo tổng hợp các biểu đồ...")
+        print(f"\n📋 Tạo báo cáo tổng hợp chỉ biểu đồ...")
 
         try:
-            # Thu thập tất cả file biểu đồ
+            # Thu thập tất cả file ảnh biểu đồ (không bao gồm dashboard)
             image_files = []
 
             # Biểu đồ Daily
@@ -629,7 +629,6 @@ class VoLTEKPIProcessor:
                 for file in sorted(os.listdir(daily_chart_dir)):
                     if file.endswith('.png'):
                         image_files.append(os.path.join(daily_chart_dir, file))
-                        print(f"   📊 Tìm thấy: Chart_daily/{file}")
 
             # Biểu đồ Hourly
             hourly_chart_dir = os.path.join(output_dir, "Chart_hourly")
@@ -637,201 +636,182 @@ class VoLTEKPIProcessor:
                 for file in sorted(os.listdir(hourly_chart_dir)):
                     if file.endswith('.png'):
                         image_files.append(os.path.join(hourly_chart_dir, file))
-                        print(f"   📊 Tìm thấy: Chart_hourly/{file}")
 
             if not image_files:
-                print("   ❌ Không tìm thấy biểu đồ nào để tạo báo cáo")
+                print("   ❌ Không tìm thấy file ảnh nào để tạo báo cáo")
                 return None
 
-            print(f"   📈 Tổng cộng tìm thấy {len(image_files)} biểu đồ")
+            print(f"   📊 Tìm thấy {len(image_files)} biểu đồ")
 
-            # Tạo báo cáo tổng hợp
-            report_paths = self._create_charts_combined_report(image_files, output_dir)
+            # Tạo báo cáo tổng hợp 1 trang duy nhất
+            report_path = self._create_single_page_report(image_files, output_dir)
 
-            return report_paths
+            if report_path:
+                print(f"✅ Đã tạo báo cáo tổng hợp: {report_path}")
+
+                # Tạo PDF từ PNG
+                try:
+                    pdf_path = report_path.replace('.png', '.pdf')
+                    img = Image.open(report_path)
+                    img.save(pdf_path, "PDF", quality=95)
+                    print(f"✅ Đã tạo báo cáo PDF: {pdf_path}")
+                except Exception as e:
+                    print(f"⚠️ Không thể tạo PDF: {e}")
+
+            return report_path
 
         except Exception as e:
             print(f"❌ Lỗi tạo báo cáo tổng hợp: {e}")
             return None
 
-    def _create_charts_combined_report(self, image_files, output_dir):
+    def _create_single_page_report(self, image_files, output_dir):
         """
-        Tạo báo cáo kết hợp tất cả biểu đồ thành 1 file PNG và 1 file PDF
+        Tạo báo cáo 1 trang duy nhất với layout tối ưu
         """
         try:
-            print("🎨 Đang tạo báo cáo tổng hợp...")
+            if not image_files:
+                return None
 
             # Đọc tất cả ảnh
             images = []
             for img_path in image_files:
                 try:
                     img = Image.open(img_path)
-                    filename = os.path.basename(img_path)
-                    images.append((img, filename))
+                    images.append((img, os.path.basename(img_path)))
                 except Exception as e:
                     print(f"   ⚠️ Không thể đọc {img_path}: {e}")
 
             if not images:
                 return None
 
-            # Phân chia biểu đồ theo loại
-            daily_charts = []
-            hourly_charts = []
+            # Cấu hình layout cho 1 trang A4 (tỉ lệ 210:297)
+            page_width = 2100  # pixels (độ phân giải cao)
+            page_height = 2970  # pixels (tỉ lệ A4)
 
-            for img, filename in images:
-                if any(keyword in filename.lower() for keyword in ['daily']):
-                    daily_charts.append((img, filename))
-                elif any(keyword in filename.lower() for keyword in ['hourly']):
-                    hourly_charts.append((img, filename))
-                else:
-                    # Mặc định vào daily
-                    daily_charts.append((img, filename))
-
-            # Layout calculation
-            charts_per_row = 2
-            chart_width = 900
-            chart_height = 600
+            # Cấu hình layout
             margin = 60
-            spacing = 40
             header_height = 120
-            section_header_height = 80
+            spacing = 40
 
-            # Tính toán kích thước
-            page_width = 2 * chart_width + 3 * margin + spacing
+            # Tính toán số biểu đồ trên mỗi hàng và cột để vừa 1 trang
+            total_charts = len(images)
 
-            total_daily_rows = math.ceil(len(daily_charts) / charts_per_row) if daily_charts else 0
-            total_hourly_rows = math.ceil(len(hourly_charts) / charts_per_row) if hourly_charts else 0
+            if total_charts <= 2:
+                cols, rows = 1, total_charts
+            elif total_charts <= 4:
+                cols, rows = 2, 2
+            elif total_charts <= 6:
+                cols, rows = 2, 3
+            elif total_charts <= 9:
+                cols, rows = 3, 3
+            else:
+                # Nếu quá nhiều biểu đồ, chỉ lấy 9 biểu đồ đầu tiên
+                cols, rows = 3, 3
+                images = images[:9]
+                total_charts = 9
+                print(f"   ⚠️ Quá nhiều biểu đồ, chỉ hiển thị {total_charts} biểu đồ đầu tiên")
 
-            total_height = (header_height + margin)  # Header chính
+            # Tính kích thước biểu đồ
+            available_width = page_width - 2 * margin - (cols - 1) * spacing
+            available_height = page_height - header_height - 2 * margin - (rows - 1) * spacing
 
-            if daily_charts:
-                total_height += section_header_height + total_daily_rows * (chart_height + spacing)
-
-            if hourly_charts:
-                total_height += section_header_height + total_hourly_rows * (chart_height + spacing)
-
-            total_height += margin  # Margin cuối
+            chart_width = available_width // cols
+            chart_height = available_height // rows
 
             # Tạo canvas
-            report_img = Image.new('RGB', (page_width, total_height), 'white')
+            report_img = Image.new('RGB', (page_width, page_height), 'white')
             draw = ImageDraw.Draw(report_img)
 
-            # Load fonts
+            # Header
             try:
-                title_font = ImageFont.truetype("arial.ttf", 42)
+                title_font = ImageFont.truetype("arial.ttf", 48)
                 subtitle_font = ImageFont.truetype("arial.ttf", 24)
-                section_font = ImageFont.truetype("arial.ttf", 32)
             except:
-                try:
-                    title_font = ImageFont.load_default()
-                    subtitle_font = ImageFont.load_default()
-                    section_font = ImageFont.load_default()
-                except:
-                    title_font = subtitle_font = section_font = None
+                title_font = ImageFont.load_default()
+                subtitle_font = ImageFont.load_default()
 
-            current_y = margin
+            # Tiêu đề chính
+            title = "VoLTE KPI ANALYSIS REPORT"
+            title_bbox = draw.textbbox((0, 0), title, font=title_font)
+            title_width = title_bbox[2] - title_bbox[0]
+            draw.text(((page_width - title_width) // 2, margin), title,
+                      fill='navy', font=title_font)
 
-            # Header chính
-            if title_font:
-                title = "VoLTE KPI CHARTS COMPREHENSIVE REPORT"
-                title_bbox = draw.textbbox((0, 0), title, font=title_font)
-                title_width = title_bbox[2] - title_bbox[0]
-                draw.text(((page_width - title_width) // 2, current_y), title,
-                          fill='navy', font=title_font)
-                current_y += 50
+            # Phụ đề
+            subtitle = f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')} | Charts: {total_charts}"
+            subtitle_bbox = draw.textbbox((0, 0), subtitle, font=subtitle_font)
+            subtitle_width = subtitle_bbox[2] - subtitle_bbox[0]
+            draw.text(((page_width - subtitle_width) // 2, margin + 60), subtitle,
+                      fill='gray', font=subtitle_font)
 
-            if subtitle_font:
-                subtitle = f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Total Charts: {len(images)}"
-                subtitle_bbox = draw.textbbox((0, 0), subtitle, font=subtitle_font)
-                subtitle_width = subtitle_bbox[2] - subtitle_bbox[0]
-                draw.text(((page_width - subtitle_width) // 2, current_y), subtitle,
-                          fill='gray', font=subtitle_font)
-                current_y += 70
+            # Vẽ đường phân cách
+            line_y = header_height + margin - 10
+            draw.line([(margin, line_y), (page_width - margin, line_y)], fill='lightgray', width=2)
 
-            # Vẽ Daily Charts
-            if daily_charts:
-                if section_font:
-                    section_title = f"DAILY KPI CHARTS ({len(daily_charts)} charts)"
-                    section_bbox = draw.textbbox((0, 0), section_title, font=section_font)
-                    section_width = section_bbox[2] - section_bbox[0]
-                    draw.text(((page_width - section_width) // 2, current_y), section_title,
-                              fill='darkgreen', font=section_font)
-                current_y += section_header_height
+            # Vẽ các biểu đồ
+            start_y = header_height + margin + 20
 
-                # Vẽ từng biểu đồ daily
-                current_y = self._draw_chart_section(report_img, daily_charts, current_y,
-                                                     chart_width, chart_height, margin, spacing, charts_per_row)
+            for i, (chart_img, filename) in enumerate(images):
+                row = i // cols
+                col = i % cols
 
-            # Vẽ Hourly Charts
-            if hourly_charts:
-                if section_font:
-                    section_title = f"HOURLY KPI CHARTS ({len(hourly_charts)} charts)"
-                    section_bbox = draw.textbbox((0, 0), section_title, font=section_font)
-                    section_width = section_bbox[2] - section_bbox[0]
-                    draw.text(((page_width - section_width) // 2, current_y), section_title,
-                              fill='darkblue', font=section_font)
-                current_y += section_header_height
+                x = margin + col * (chart_width + spacing)
+                y = start_y + row * (chart_height + spacing)
 
-                # Vẽ từng biểu đồ hourly
-                current_y = self._draw_chart_section(report_img, hourly_charts, current_y,
-                                                     chart_width, chart_height, margin, spacing, charts_per_row)
+                # Resize biểu đồ giữ nguyên tỉ lệ
+                chart_resized = self._resize_image_proportional(chart_img, chart_width, chart_height)
 
-            # Lưu báo cáo PNG
-            png_report_path = os.path.join(output_dir, "VoLTE_KPI_All_Charts_Report.png")
-            report_img.save(png_report_path, "PNG", quality=95)
-            print(f"✅ Đã tạo báo cáo PNG: {png_report_path}")
+                # Căn giữa biểu đồ trong ô
+                chart_w, chart_h = chart_resized.size
+                center_x = x + (chart_width - chart_w) // 2
+                center_y = y + (chart_height - chart_h) // 2
 
-            # Lưu báo cáo PDF
-            pdf_report_path = os.path.join(output_dir, "VoLTE_KPI_All_Charts_Report.pdf")
-            try:
-                report_img.save(pdf_report_path, "PDF", quality=95)
-                print(f"✅ Đã tạo báo cáo PDF: {pdf_report_path}")
-            except Exception as e:
-                print(f"⚠️ Không thể tạo PDF: {e}")
-                pdf_report_path = None
+                report_img.paste(chart_resized, (center_x, center_y))
 
-            return {
-                'png': png_report_path,
-                'pdf': pdf_report_path
-            }
+                # Thêm border nhẹ quanh biểu đồ
+                border_rect = [center_x - 2, center_y - 2,
+                               center_x + chart_w + 2, center_y + chart_h + 2]
+                draw.rectangle(border_rect, outline='lightgray', width=1)
+
+            # Footer
+            footer_text = f"Total KPIs Analyzed: {total_charts} | Report Format: Single Page Summary"
+            footer_bbox = draw.textbbox((0, 0), footer_text, font=subtitle_font)
+            footer_width = footer_bbox[2] - footer_bbox[0]
+            draw.text(((page_width - footer_width) // 2, page_height - 60), footer_text,
+                      fill='gray', font=subtitle_font)
+
+            # Lưu báo cáo
+            report_path = os.path.join(output_dir, "VoLTE_KPI_Single_Page_Report.png")
+            report_img.save(report_path, "PNG", quality=95, dpi=(300, 300))
+
+            return report_path
 
         except Exception as e:
-            print(f"❌ Lỗi tạo báo cáo kết hợp: {e}")
+            print(f"❌ Lỗi tạo báo cáo 1 trang: {e}")
             return None
 
-    def _draw_chart_section(self, report_img, charts, start_y, chart_width, chart_height, margin, spacing,
-                            charts_per_row):
+    def _resize_image_proportional(self, img, max_width, max_height):
         """
-        Vẽ một section biểu đồ lên canvas
+        Resize ảnh giữ nguyên tỉ lệ và fit vào kích thước cho phép
         """
-        current_y = start_y
+        original_width, original_height = img.size
 
-        for i, (chart_img, filename) in enumerate(charts):
-            row = i // charts_per_row
-            col = i % charts_per_row
+        # Tính tỉ lệ resize
+        ratio_w = max_width / original_width
+        ratio_h = max_height / original_height
+        ratio = min(ratio_w, ratio_h)  # Chọn tỉ lệ nhỏ hơn để đảm bảo fit
 
-            # Tính vị trí
-            x = margin + col * (chart_width + spacing)
-            y = current_y + row * (chart_height + spacing)
+        # Tính kích thước mới
+        new_width = int(original_width * ratio)
+        new_height = int(original_height * ratio)
 
-            # Resize biểu đồ
-            try:
-                chart_resized = chart_img.resize((chart_width, chart_height), Image.Resampling.LANCZOS)
-                report_img.paste(chart_resized, (x, y))
-            except Exception as e:
-                print(f"   ⚠️ Lỗi khi paste biểu đồ {filename}: {e}")
-
-        # Tính toán y cho section tiếp theo
-        total_rows = math.ceil(len(charts) / charts_per_row)
-        next_y = current_y + total_rows * (chart_height + spacing) + spacing
-
-        return next_y
+        return img.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
     def process_complete_workflow(self, excel_path, output_dir="output_charts"):
         """
-        Thực hiện quy trình hoàn chỉnh từ Excel đến biểu đồ (không có dashboard table)
+        Thực hiện quy trình hoàn chỉnh từ Excel đến báo cáo (KHÔNG có dashboard)
         """
-        print(f"\n🎯 BẮT ĐẦU QUY TRÌNH XỬ LÝ HOÀN CHỈNH - CHỈ TẠO BIỂU ĐỒ")
+        print(f"\n🎯 BẮT ĐẦU QUY TRÌNH XỬ LÝ HOÀN CHỈNH")
         print(f"📁 File đầu vào: {excel_path}")
         print(f"📁 Thư mục đầu ra: {output_dir}")
         print("=" * 70)
@@ -871,6 +851,10 @@ class VoLTEKPIProcessor:
         print("\n🎨 BƯỚC 4: TẠO BIỂU ĐỒ")
         self.create_charts_from_csv(output_dir)
 
+        # Bước 5: Tạo báo cáo tổng hợp (KHÔNG có dashboard)
+        print("\n📋 BƯỚC 5: TẠO BÁO CÁO TỔNG HỢP")
+        report_path = self.create_comprehensive_report(output_dir)
+
         # Tổng kết
         print("\n" + "=" * 70)
         print("🎉 HOÀN TẤT QUY TRÌNH XỬ LÝ!")
@@ -889,6 +873,13 @@ class VoLTEKPIProcessor:
                 chart_count = len([f for f in os.listdir(folder_path) if f.endswith('.png')])
                 print(f"   📂 {folder}/ ({chart_count} biểu đồ)")
 
+        if report_path and os.path.exists(report_path):
+            print(f"   📊 VoLTE_KPI_Single_Page_Report.png")
+
+        pdf_path = os.path.join(output_dir, "VoLTE_KPI_Single_Page_Report.pdf")
+        if os.path.exists(pdf_path):
+            print(f"   📊 VoLTE_KPI_Single_Page_Report.pdf")
+
         print("=" * 70)
         return True
 
@@ -897,14 +888,13 @@ def main():
     """
     Hàm main để chạy chương trình
     """
-    print("🚀 VOLTE KPI DATA PROCESSING SYSTEM - CHARTS ONLY")
+    print("🚀 VOLTE KPI DATA PROCESSING SYSTEM")
     print("=" * 70)
     print("📋 Chức năng:")
     print("   ✅ Chuyển đổi Excel sang CSV (chỉ 2 sheet: Net KPI_Daily, Net KPI_Hourly)")
     print("   ✅ Làm sạch dữ liệu chuyên sâu")
     print("   ✅ Tạo biểu đồ đường và biểu đồ kết hợp")
-    print("   ❌ Không tạo Dashboard KPI Table")
-    print("   ❌ Không tạo báo cáo tổng hợp")
+    print("   ✅ Tạo báo cáo tổng hợp 1 trang PNG/PDF (KHÔNG có dashboard)")
     print("=" * 70)
 
     # Khởi tạo processor
@@ -924,10 +914,8 @@ def main():
     success = processor.process_complete_workflow(excel_file)
 
     if success:
-        print("\n🎊 THÀNH CÔNG! Hãy kiểm tra thư mục 'output_charts' để xem các biểu đồ")
-        print("📊 Các biểu đồ được tạo:")
-        print("   📈 Biểu đồ đường riêng lẻ cho từng KPI")
-        print("   📊 Biểu đồ kết hợp (đường + cột) cho các cặp KPI")
+        print("\n🎊 THÀNH CÔNG! Hãy kiểm tra thư mục 'output_charts'")
+        print("📊 Báo cáo tổng hợp được lưu dạng PNG và PDF 1 trang duy nhất")
     else:
         print("\n❌ CÓ LỖI XẢY RA! Vui lòng kiểm tra lại dữ liệu đầu vào")
 
