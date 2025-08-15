@@ -24,7 +24,103 @@ class VoLTEKPIProcessor:
         self.cleaned_data = {}
         self.csv_files = {}
 
-        print("VOLTE KPI DATA PROCESSOR")
+        # Định nghĩa các biểu đồ cụ thể cần tạo
+        self.required_charts = {
+            'hourly': [
+                {
+                    'type': 'line',
+                    'y_col': 'VoLTE Traffic (Erl)',
+                    'title': 'VoLTE Traffic (Erl) by Date and Hour'
+                },
+                {
+                    'type': 'combo',
+                    'y_line': 'SRVCC HOSR UTRAN',
+                    'y_bar': 'SRVCC HO Att UTRAN',
+                    'title': 'SRVCC HOSR UTRAN and SRVCC HO Att UTRAN by Date and Hour'
+                },
+                {
+                    'type': 'combo',
+                    'y_line': 'VoLTE CSSR QCI1',
+                    'y_bar': 'VoLTE RAB Att QCI1',
+                    'title': 'VoLTE CSSR QCI1 and VoLTE RAB Att QCI1 by Date and Hour'
+                },
+                {
+                    'type': 'combo',
+                    'y_line': 'VoLTE CSSR QCI5',
+                    'y_bar': 'VoLTE RAB Att QCI5',
+                    'title': 'VoLTE CSSR QCI5 and VoLTE RAB Att QCI5 by Date and Hour'
+                },
+                {
+                    'type': 'combo',
+                    'y_line': 'VoLTE CDR QCI1',
+                    'y_bar': 'VoLTE Call Drop QCI1',
+                    'title': 'VoLTE CDR QCI1 and VoLTE Call Drop QCI1 by Date and Hour'
+                },
+                {
+                    'type': 'combo',
+                    'y_line': 'VoLTE CDR QCI5',
+                    'y_bar': 'VoLTE Call Drop QCI5',
+                    'title': 'VoLTE CDR QCI5 and VoLTE Call Drop QCI5 by Date and Hour'
+                },
+                {
+                    'type': 'combo',
+                    'y_line': 'VOLTE UL Packet Loss',
+                    'y_bar': 'VOLTE UL Packet Loss_Mau so',
+                    'title': 'VOLTE UL Packet Loss and VOLTE UL Packet Loss_Mau so by Date and Hour'
+                },
+                {
+                    'type': 'combo',
+                    'y_line': 'VOLTE DL Packet Loss',
+                    'y_bar': 'VOLTE DL Packet Loss_Mau so',
+                    'title': 'VOLTE DL Packet Loss and VOLTE DL Packet Loss_Mau so by Date and Hour'
+                }
+            ],
+            'daily': [
+                {
+                    'type': 'line',
+                    'y_col': 'VoLTE Traffic (Erl)',
+                    'title': 'VoLTE Traffic (Erl) by Date'
+                },
+                {
+                    'type': 'combo',
+                    'y_line': 'SRVCC HOSR UTRAN',
+                    'y_bar': 'SRVCC HO Att UTRAN',
+                    'title': 'SRVCC HOSR UTRAN and SRVCC HO Att UTRAN by Date'
+                },
+                {
+                    'type': 'combo',
+                    'y_line': 'VoLTE CSSR QCI1',
+                    'y_bar': 'VoLTE RAB Att QCI1',
+                    'title': 'VoLTE CSSR QCI1 and VoLTE RAB Att QCI1 by Date'
+                },
+                {
+                    'type': 'combo',
+                    'y_line': 'VoLTE CSSR QCI5',
+                    'y_bar': 'VoLTE RAB Att QCI5',
+                    'title': 'VoLTE CSSR QCI5 and VoLTE RAB Att QCI5 by Date'
+                },
+                {
+                    'type': 'combo',
+                    'y_line': 'VoLTE CDR QCI1',
+                    'y_bar': 'VoLTE Call Drop QCI1',
+                    'title': 'VoLTE CDR QCI1 and VoLTE Call Drop QCI1 by Date'
+                },
+                {
+                    'type': 'combo',
+                    'y_line': 'VoLTE CDR QCI5',
+                    'y_bar': 'VoLTE Call Drop QCI5',
+                    'title': 'VoLTE CDR QCI5 and VoLTE Call Drop QCI5 by Date'
+                },
+                {
+                    'type': 'combo',
+                    'y_line': 'pmErabRelAbnormalEnbActHprQci',
+                    'y_bar': 'VoLTE Call Drop QCI1',
+                    'title': 'pmErabRelAbnormalEnbActHprQci and VoLTE Call Drop QCI1 by Date'
+                }
+            ]
+        }
+
+        print("VOLTE KPI DATA PROCESSOR - ENHANCED VERSION WITH FIXED HOURLY CHARTS")
         print("=" * 70)
 
     def read_excel_file(self, excel_path):
@@ -134,7 +230,7 @@ class VoLTEKPIProcessor:
 
         # Tìm các từ khóa quan trọng trong header
         header_keywords = ['Date', 'Time', 'VoLTE', 'CSSR', 'CDR', 'Traffic',
-                           'SRVCC', 'SR', 'HOSR', 'GB', '%', 'Rate']
+                           'SRVCC', 'SR', 'HOSR', 'GB', '%', 'Rate', 'QCI', 'Att', 'Drop']
 
         header_str = ' '.join([str(col) for col in df.columns])
 
@@ -167,7 +263,7 @@ class VoLTEKPIProcessor:
         df = self._remove_unnecessary_data(df)
 
         # 4. Xử lý cột Date/Time
-        df = self._process_datetime_column(df)
+        df = self._process_datetime_column(df, sheet_name)
 
         # 5. Chuyển đổi các cột số
         df = self._convert_numeric_columns(df)
@@ -198,7 +294,7 @@ class VoLTEKPIProcessor:
         Tìm và sửa dòng header đúng
         """
         # Tìm dòng chứa từ khóa quan trọng
-        header_keywords = ['Date', 'Time', 'VoLTE', 'CSSR', 'CDR', 'Traffic', 'SRVCC']
+        header_keywords = ['Date', 'Time', 'VoLTE', 'CSSR', 'CDR', 'Traffic', 'SRVCC', 'QCI', 'Att', 'Drop']
 
         for i in range(min(5, len(df))):
             row_str = ' '.join([str(val) for val in df.iloc[i].values if pd.notna(val)])
@@ -255,9 +351,9 @@ class VoLTEKPIProcessor:
 
         return df.reset_index(drop=True)
 
-    def _process_datetime_column(self, df):
+    def _process_datetime_column(self, df, sheet_name):
         """
-        Xử lý cột Date/Time
+        Xử lý cột Date/Time với đặc biệt cho dữ liệu Hourly
         """
         if len(df.columns) == 0 or len(df) == 0:
             return df
@@ -276,30 +372,21 @@ class VoLTEKPIProcessor:
         print(f"   📅 Xử lý cột thời gian: {date_col}")
 
         try:
-            # Thử các phương pháp chuyển đổi khác nhau
-            original_data = df[date_col].copy()
+            # Xử lý đặc biệt cho dữ liệu Hourly
+            if 'hourly' in sheet_name.lower() or 'hour' in sheet_name.lower():
+                df = self._process_hourly_datetime(df, date_col)
+            else:
+                # Xử lý bình thường cho Daily
+                original_data = df[date_col].copy()
+                df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
 
-            # Phương pháp 1: Chuyển đổi trực tiếp
-            df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
-
-            # Nếu có quá nhiều NaT, thử phương pháp khác
-            nat_count = df[date_col].isna().sum()
-            if nat_count > len(df) * 0.5:  # Hơn 50% là NaT
-                print(f"   ⚠️ Quá nhiều ngày không hợp lệ, thử phương pháp khác...")
-
-                # Phương pháp 2: Xử lý số Excel
-                try:
-                    df[date_col] = pd.to_datetime(original_data, origin='1899-12-30', unit='D', errors='coerce')
-                    nat_count = df[date_col].isna().sum()
-                except:
-                    pass
-
-                # Phương pháp 3: Parsing linh hoạt
-                if nat_count > len(df) * 0.5:
+                # Nếu có quá nhiều NaT, thử phương pháp khác
+                nat_count = df[date_col].isna().sum()
+                if nat_count > len(df) * 0.5:  # Hơn 50% là NaT
                     try:
-                        df[date_col] = pd.to_datetime(original_data, infer_datetime_format=True, errors='coerce')
+                        df[date_col] = pd.to_datetime(original_data, origin='1899-12-30', unit='D', errors='coerce')
                     except:
-                        pass
+                        df[date_col] = pd.to_datetime(original_data, infer_datetime_format=True, errors='coerce')
 
             # Loại bỏ các hàng có ngày không hợp lệ
             valid_dates = df[date_col].notna()
@@ -312,6 +399,85 @@ class VoLTEKPIProcessor:
 
         except Exception as e:
             print(f"   ⚠️ Lỗi xử lý ngày tháng: {e}")
+
+        return df
+
+    def _process_hourly_datetime(self, df, date_col):
+        """
+        Xử lý đặc biệt cho dữ liệu hourly để tạo datetime chính xác
+        """
+        print("   🕐 Xử lý dữ liệu hourly với datetime đầy đủ...")
+
+        # Kiểm tra xem có cột Hour riêng biệt không
+        hour_col = None
+        for col in df.columns:
+            if 'hour' in str(col).lower() or 'time' in str(col).lower():
+                if col != date_col:
+                    hour_col = col
+                    break
+
+        if hour_col is not None:
+            print(f"   🕐 Tìm thấy cột giờ riêng biệt: {hour_col}")
+            # Kết hợp Date và Hour thành datetime đầy đủ
+            try:
+                df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
+                df[hour_col] = pd.to_numeric(df[hour_col], errors='coerce')
+
+                # Tạo datetime đầy đủ
+                df['datetime_full'] = df.apply(lambda row:
+                                               row[date_col] + pd.Timedelta(hours=row[hour_col])
+                                               if pd.notna(row[date_col]) and pd.notna(row[hour_col])
+                                               else pd.NaT, axis=1)
+
+                # Thay thế cột date bằng datetime đầy đủ
+                df[date_col] = df['datetime_full']
+                df = df.drop(['datetime_full'], axis=1, errors='ignore')
+
+                # Xóa cột hour nếu không cần thiết cho chart
+                if hour_col not in [col for chart in self.required_charts.get('hourly', [])
+                                    for col in [chart.get('y_col'), chart.get('y_line'), chart.get('y_bar')] if col]:
+                    df = df.drop([hour_col], axis=1, errors='ignore')
+
+            except Exception as e:
+                print(f"   ⚠️ Lỗi kết hợp Date-Hour: {e}")
+                # Fall back về xử lý thông thường
+                df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
+        else:
+            # Thử phân tích datetime từ cột duy nhất
+            original_data = df[date_col].copy()
+
+            # Thử các format khác nhau cho hourly data
+            formats_to_try = [
+                '%Y-%m-%d %H:%M:%S',
+                '%Y-%m-%d %H:%M',
+                '%m/%d/%Y %H:%M',
+                '%d/%m/%Y %H:%M',
+                '%Y-%m-%d %H',
+                None  # Let pandas infer
+            ]
+
+            for fmt in formats_to_try:
+                try:
+                    if fmt is None:
+                        df[date_col] = pd.to_datetime(original_data, errors='coerce', infer_datetime_format=True)
+                    else:
+                        df[date_col] = pd.to_datetime(original_data, format=fmt, errors='coerce')
+
+                    # Kiểm tra thành công
+                    valid_count = df[date_col].notna().sum()
+                    if valid_count > len(df) * 0.7:  # Ít nhất 70% thành công
+                        print(f"   ✅ Thành công với format: {fmt if fmt else 'auto-detect'}")
+                        break
+                except:
+                    continue
+
+            # Nếu vẫn không thành công, thử xử lý số Excel
+            if df[date_col].notna().sum() < len(df) * 0.5:
+                try:
+                    df[date_col] = pd.to_datetime(original_data, origin='1899-12-30', unit='D', errors='coerce')
+                    print("   ✅ Đã sử dụng origin Excel để convert")
+                except:
+                    print("   ⚠️ Không thể convert datetime, giữ nguyên dữ liệu gốc")
 
         return df
 
@@ -371,6 +537,8 @@ class VoLTEKPIProcessor:
         print(f"\n💾 Lưu dữ liệu thành CSV...")
         os.makedirs(output_dir, exist_ok=True)
 
+        csv_files = {}
+
         for sheet_name, df in dataframes.items():
             # Tạo tên file CSV
             if 'Daily' in sheet_name or 'daily' in sheet_name.lower():
@@ -388,165 +556,197 @@ class VoLTEKPIProcessor:
                 print(f"✅ Đã lưu: {csv_filename} ({df.shape[0]} hàng × {df.shape[1]} cột)")
 
                 # Lưu thông tin để tạo biểu đồ sau
-                self.csv_files[sheet_name] = csv_path
+                csv_files[sheet_name] = csv_path
                 self.cleaned_data[sheet_name] = df
 
             except Exception as e:
                 print(f"❌ Lỗi khi lưu {csv_filename}: {e}")
 
-        return self.csv_files
+        self.csv_files = csv_files
+        return csv_files
 
-    def create_charts_from_csv(self, output_dir="output_charts"):
+    def _find_matching_column(self, df, target_cols):
         """
-        Tạo biểu đồ từ các file CSV
+        Tìm cột phù hợp nhất từ danh sách tên cột mục tiêu
         """
-        print(f"\n🎨 Tạo biểu đồ từ dữ liệu CSV...")
+        if isinstance(target_cols, str):
+            target_cols = [target_cols]
 
-        for sheet_name, csv_path in self.csv_files.items():
-            # Xác định loại biểu đồ
-            if 'Daily' in sheet_name or 'daily' in sheet_name.lower():
-                chart_folder = os.path.join(output_dir, "Chart_daily")
-                data_type = "Daily"
-            elif 'Hourly' in sheet_name or 'hourly' in sheet_name.lower():
-                chart_folder = os.path.join(output_dir, "Chart_hourly")
-                data_type = "Hourly"
-            else:
-                chart_folder = os.path.join(output_dir, "Charts")
-                data_type = "General"
+        df_columns_lower = {col.lower(): col for col in df.columns}
 
-            # Tạo biểu đồ
-            self._generate_charts_for_data(csv_path, chart_folder, data_type)
+        for target in target_cols:
+            target_lower = target.lower()
+            # Tìm khớp chính xác
+            if target_lower in df_columns_lower:
+                return df_columns_lower[target_lower]
 
-    def _generate_charts_for_data(self, csv_file, chart_folder, data_type):
+            # Tìm khớp một phần
+            for col_lower, col_original in df_columns_lower.items():
+                if target_lower in col_lower or any(word in col_lower for word in target_lower.split()):
+                    return col_original
+
+        return None
+
+    def create_specific_charts(self, output_dir="output_charts"):
         """
-        Tạo biểu đồ cho một file CSV cụ thể
+        Tạo các biểu đồ cụ thể theo yêu cầu với cải thiện cho Hourly
         """
-        print(f"\n📊 Tạo biểu đồ {data_type}...")
+        print(f"\n🎨 Tạo các biểu đồ cụ thể theo yêu cầu...")
 
-        if not os.path.exists(csv_file):
-            print(f"   ❌ Không tìm thấy file: {csv_file}")
-            return
+        created_charts = []
 
-        os.makedirs(chart_folder, exist_ok=True)
+        for sheet_name, df in self.cleaned_data.items():
+            print(f"\n📊 Xử lý dữ liệu từ {sheet_name}...")
 
-        try:
-            # Đọc dữ liệu
-            df = pd.read_csv(csv_file)
-            print(f"   📊 Đọc dữ liệu: {df.shape}")
+            # Xác định loại dữ liệu (daily hoặc hourly)
+            data_type = 'daily' if 'daily' in sheet_name.lower() else 'hourly'
 
-            if df.empty or len(df.columns) < 2:
-                print(f"   ⚠️ Dữ liệu không đủ để tạo biểu đồ")
-                return
+            # Tạo thư mục cho biểu đồ
+            chart_folder = os.path.join(output_dir, f"Chart_{data_type}")
+            os.makedirs(chart_folder, exist_ok=True)
 
-            # Cột thời gian (cột đầu tiên)
-            x_column = df.columns[0]
-            print(f"   📅 Cột thời gian: {x_column}")
+            # Lấy danh sách biểu đồ cần tạo
+            charts_config = self.required_charts.get(data_type, [])
 
-            # Chuyển đổi cột thời gian
-            try:
-                df[x_column] = pd.to_datetime(df[x_column])
-            except:
-                print(f"   ⚠️ Không thể chuyển đổi cột thời gian")
+            if not charts_config:
+                print(f"   ⚠️ Không có cấu hình biểu đồ cho {data_type}")
+                continue
 
-            # Lọc các cột số hợp lệ
-            numeric_columns = []
-            for col in df.columns[1:]:
-                if pd.api.types.is_numeric_dtype(df[col]) and df[col].count() > 0:
-                    # Kiểm tra có đủ dữ liệu không (ít nhất 20% không phải NaN)
-                    valid_ratio = df[col].count() / len(df)
-                    if valid_ratio >= 0.2:
-                        numeric_columns.append(col)
+            # Tìm cột thời gian
+            time_col = df.columns[0]  # Giả định cột đầu tiên là thời gian
 
-            print(f"   📈 Tìm thấy {len(numeric_columns)} cột dữ liệu hợp lệ")
+            print(f"   📅 Sử dụng cột thời gian: {time_col}")
+            print(f"   📋 Tất cả các cột có sẵn: {list(df.columns)}")
 
-            if not numeric_columns:
-                print(f"   ❌ Không có cột dữ liệu hợp lệ!")
-                return
-
-            chart_count = 0
-
-            # 1. Tạo biểu đồ đường cho từng KPI
-            print(f"   📊 Tạo biểu đồ đường riêng lẻ...")
-            for col_name in numeric_columns:
+            # Tạo từng biểu đồ
+            for chart_config in charts_config:
                 try:
-                    chart_path = self._create_line_chart(df, x_column, col_name, chart_folder)
-                    if chart_path:
-                        chart_count += 1
+                    if chart_config['type'] == 'line':
+                        # Biểu đồ đường đơn
+                        y_col = self._find_matching_column(df, chart_config['y_col'])
+                        if y_col:
+                            if data_type == 'hourly':
+                                chart_path = self._create_enhanced_hourly_line_chart(
+                                    df, time_col, y_col, chart_folder, chart_config['title']
+                                )
+                            else:
+                                chart_path = self._create_enhanced_line_chart(
+                                    df, time_col, y_col, chart_folder, chart_config['title']
+                                )
+
+                            if chart_path:
+                                created_charts.append(chart_path)
+                                print(f"   ✅ Đã tạo biểu đồ đường: {chart_config['title']}")
+                            else:
+                                print(f"   ❌ Không thể tạo biểu đồ đường: {chart_config['title']}")
+                        else:
+                            print(f"   ⚠️ Không tìm thấy cột: {chart_config['y_col']}")
+
+                    elif chart_config['type'] == 'combo':
+                        # Biểu đồ kết hợp
+                        y_line = self._find_matching_column(df, chart_config['y_line'])
+                        y_bar = self._find_matching_column(df, chart_config['y_bar'])
+
+                        if y_line and y_bar:
+                            if data_type == 'hourly':
+                                chart_path = self._create_enhanced_hourly_combo_chart(
+                                    df, time_col, y_line, y_bar, chart_folder, chart_config['title']
+                                )
+                            else:
+                                chart_path = self._create_enhanced_combo_chart(
+                                    df, time_col, y_line, y_bar, chart_folder, chart_config['title']
+                                )
+
+                            if chart_path:
+                                created_charts.append(chart_path)
+                                print(f"   ✅ Đã tạo biểu đồ kết hợp: {chart_config['title']}")
+                            else:
+                                print(f"   ❌ Không thể tạo biểu đồ kết hợp: {chart_config['title']}")
+                        else:
+                            missing_cols = []
+                            if not y_line:
+                                missing_cols.append(chart_config['y_line'])
+                            if not y_bar:
+                                missing_cols.append(chart_config['y_bar'])
+                            print(f"   ⚠️ Không tìm thấy cột: {', '.join(missing_cols)}")
+
                 except Exception as e:
-                    print(f"   ❌ Lỗi tạo biểu đồ đường {col_name}: {e}")
+                    print(f"   ❌ Lỗi tạo biểu đồ '{chart_config['title']}': {e}")
+                    continue
 
-            # 2. Tạo biểu đồ kết hợp (đường + cột)
-            print(f"   📊 Tạo biểu đồ kết hợp...")
-            for i in range(0, len(numeric_columns) - 1, 2):
-                try:
-                    col1 = numeric_columns[i]
-                    col2 = numeric_columns[i + 1] if i + 1 < len(numeric_columns) else None
+        print(f"\n🎉 Đã tạo tổng cộng {len(created_charts)} biểu đồ cụ thể!")
+        return created_charts
 
-                    if col2 and col1 != col2:
-                        chart_path = self._create_combo_chart(df, x_column, col1, col2, chart_folder)
-                        if chart_path:
-                            chart_count += 1
-                except Exception as e:
-                    print(f"   ❌ Lỗi tạo biểu đồ kết hợp: {e}")
-
-            print(f"   🎉 Đã tạo {chart_count} biểu đồ cho {data_type}")
-
-        except Exception as e:
-            print(f"   ❌ Lỗi tạo biểu đồ {data_type}: {e}")
-
-    def _create_line_chart(self, df, x_col, y_col, chart_folder):
+    def _create_enhanced_hourly_line_chart(self, df, x_col, y_col, chart_folder, title):
         """
-        Tạo biểu đồ đường cho một KPI
+        Tạo biểu đồ đường cho dữ liệu hourly với format đặc biệt
         """
         try:
-            plt.figure(figsize=(12, 6))
-
             # Lọc dữ liệu hợp lệ
             clean_data = df[[x_col, y_col]].dropna()
             if clean_data.empty:
-                plt.close()
                 return None
 
-            # Vẽ biểu đồ
+            plt.figure(figsize=(16, 8))
+
+            # Vẽ biểu đồ đường với style đẹp hơn cho hourly data
             plt.plot(clean_data[x_col], clean_data[y_col],
-                     marker='o', linewidth=2.5, markersize=4,
-                     color='#1f77b4', alpha=0.8, label=y_col)
+                     marker='o', linewidth=2, markersize=3,
+                     color='#2E86AB', alpha=0.8, markerfacecolor='#A23B72',
+                     markeredgecolor='white', markeredgewidth=0.5)
 
-            # Định dạng biểu đồ
-            plt.title(f'{y_col} Trend Analysis', fontsize=14, fontweight='bold', pad=20)
-            plt.xlabel('Date/Time', fontsize=12)
-            plt.ylabel(y_col, fontsize=12)
-            plt.grid(True, alpha=0.3, linestyle='--')
-            plt.legend(fontsize=11, loc='best')
+            # Định dạng tiêu đề và labels
+            plt.title(title, fontsize=16, fontweight='bold', pad=25, color='#2C3E50')
+            plt.xlabel('Date and Hour', fontsize=12, fontweight='bold', color='#34495E')
+            plt.ylabel(y_col, fontsize=12, fontweight='bold', color='#34495E')
 
-            # Định dạng trục x cho datetime
+            # Grid và styling
+            plt.grid(True, alpha=0.4, linestyle='--', linewidth=0.8)
+            plt.gca().set_facecolor('#F8F9FA')
+
+            # Định dạng trục x đặc biệt cho hourly data
             if pd.api.types.is_datetime64_any_dtype(clean_data[x_col]):
-                plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
-                plt.gca().xaxis.set_major_locator(mdates.DayLocator(interval=max(1, len(clean_data) // 10)))
+                # Lấy số ngày duy nhất
+                dates = pd.to_datetime(clean_data[x_col].dt.date).unique()
+                num_days = len(dates)
 
-            plt.xticks(rotation=45, fontsize=10)
-            plt.yticks(fontsize=10)
+                if num_days <= 7:  # Ít hơn 1 tuần - hiện từng giờ
+                    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%m/%d\n%H:%M'))
+                    plt.gca().xaxis.set_major_locator(mdates.HourLocator(interval=max(1, len(clean_data) // 20)))
+                elif num_days <= 31:  # Ít hơn 1 tháng - hiện một số giờ
+                    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%m/%d\n%H:00'))
+                    plt.gca().xaxis.set_major_locator(mdates.HourLocator(interval=max(6, len(clean_data) // 30)))
+                else:  # Nhiều hơn - hiện theo ngày với một số sample giờ
+                    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
+                    plt.gca().xaxis.set_major_locator(mdates.DayLocator(interval=max(1, num_days // 15)))
 
-            # Màu nền
-            plt.gca().set_facecolor('#f8f9fa')
+                plt.xticks(rotation=45)
+
+            # Styling cho axes
+            ax = plt.gca()
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['left'].set_color('#BDC3C7')
+            ax.spines['bottom'].set_color('#BDC3C7')
 
             plt.tight_layout()
 
-            # Lưu biểu đồ
-            safe_filename = "".join(c for c in y_col if c.isalnum() or c in (' ', '-', '_')).replace(' ', '_')
+            # Tạo tên file an toàn
+            safe_filename = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).replace(' ', '_')
             chart_path = os.path.join(chart_folder, f"{safe_filename}_line.png")
-            plt.savefig(chart_path, dpi=300, bbox_inches='tight', facecolor='white')
+            plt.savefig(chart_path, dpi=300, bbox_inches='tight', facecolor='white', edgecolor='none')
             plt.close()
 
             return chart_path
 
         except Exception as e:
             plt.close()
+            print(f"      ❌ Lỗi tạo biểu đồ đường hourly: {e}")
             return None
 
-    def _create_combo_chart(self, df, x_col, y_line, y_bar, chart_folder):
+    def _create_enhanced_hourly_combo_chart(self, df, x_col, y_line, y_bar, chart_folder, title):
         """
-        Tạo biểu đồ kết hợp đường và cột
+        Tạo biểu đồ kết hợp (đường + cột) cho dữ liệu hourly
         """
         try:
             # Lọc dữ liệu hợp lệ
@@ -554,106 +754,305 @@ class VoLTEKPIProcessor:
             if clean_data.empty:
                 return None
 
-            fig, ax1 = plt.subplots(figsize=(12, 6))
+            fig, ax1 = plt.subplots(figsize=(16, 8))
+            fig.patch.set_facecolor('white')
 
-            # Trục Y bên trái (đường)
-            color_line = '#1f77b4'
-            ax1.set_xlabel('Date/Time', fontsize=12)
+            # Trục Y bên trái (đường) - sử dụng gradient color
+            color_line = '#E74C3C'
+            ax1.set_xlabel('Date and Hour', fontsize=12, fontweight='bold', color='#34495E')
             ax1.set_ylabel(y_line, color=color_line, fontsize=12, fontweight='bold')
-            ax1.plot(clean_data[x_col], clean_data[y_line],
-                     marker='o', color=color_line, linewidth=2.5, markersize=4,
-                     label=y_line, alpha=0.8)
-            ax1.tick_params(axis='y', labelcolor=color_line, labelsize=10)
-            ax1.tick_params(axis='x', labelsize=10)
-            ax1.grid(True, alpha=0.3, linestyle='--')
 
-            # Trục Y bên phải (cột)
+            line_plot = ax1.plot(clean_data[x_col], clean_data[y_line],
+                                 marker='o', color=color_line, linewidth=2, markersize=3,
+                                 label=y_line, alpha=0.9, markerfacecolor='white',
+                                 markeredgecolor=color_line, markeredgewidth=1)
+
+            ax1.tick_params(axis='y', labelcolor=color_line, labelsize=10)
+            ax1.tick_params(axis='x', labelsize=9, rotation=45)
+            ax1.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+
+            # Trục Y bên phải (cột) - sử dụng gradient color
             ax2 = ax1.twinx()
-            color_bar = '#ff7f0e'
+            color_bar = '#3498DB'
             ax2.set_ylabel(y_bar, color=color_bar, fontsize=12, fontweight='bold')
 
-            # Tính độ rộng cột
-            bar_width = 0.6 if len(clean_data) > 15 else 0.8
+            # Tính độ rộng cột dựa trên số lượng dữ liệu và hourly spacing
+            if len(clean_data) > 200:  # Nhiều dữ liệu hourly
+                bar_width = 0.8
+                alpha_val = 0.6
+            elif len(clean_data) > 100:
+                bar_width = 0.9
+                alpha_val = 0.65
+            else:
+                bar_width = 1.0
+                alpha_val = 0.7
 
-            ax2.bar(clean_data[x_col], clean_data[y_bar],
-                    alpha=0.6, color=color_bar, label=y_bar, width=bar_width)
+            # Tạo bar width dựa trên time difference
+            if pd.api.types.is_datetime64_any_dtype(clean_data[x_col]) and len(clean_data) > 1:
+                time_diff = (clean_data[x_col].iloc[1] - clean_data[x_col].iloc[0]).total_seconds() / 3600  # hours
+                if time_diff <= 1:  # hourly data
+                    bar_width = pd.Timedelta(hours=0.8)
+                else:
+                    bar_width = pd.Timedelta(hours=time_diff * 0.8)
+
+            bars = ax2.bar(clean_data[x_col], clean_data[y_bar],
+                           alpha=alpha_val, color=color_bar, label=y_bar,
+                           width=bar_width, edgecolor='white', linewidth=0.5)
+
             ax2.tick_params(axis='y', labelcolor=color_bar, labelsize=10)
 
-            # Tiêu đề
-            plt.title(f'{y_line} & {y_bar} Combined Analysis',
-                      fontsize=14, fontweight='bold', pad=20)
+            # Tiêu đề với styling đẹp
+            plt.title(title, fontsize=16, fontweight='bold', pad=25, color='#2C3E50')
 
-            # Định dạng trục x
+            # Định dạng trục x đặc biệt cho hourly data
             if pd.api.types.is_datetime64_any_dtype(clean_data[x_col]):
-                fig.autofmt_xdate()
-                ax1.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
-            else:
-                plt.xticks(rotation=45)
+                # Lấy số ngày duy nhất
+                dates = pd.to_datetime(clean_data[x_col].dt.date).unique()
+                num_days = len(dates)
 
-            # Legend kết hợp
+                if num_days <= 7:  # Ít hơn 1 tuần - hiện từng giờ
+                    ax1.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d\n%H:%M'))
+                    ax1.xaxis.set_major_locator(mdates.HourLocator(interval=max(1, len(clean_data) // 20)))
+                elif num_days <= 31:  # Ít hơn 1 tháng - hiện một số giờ
+                    ax1.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d\n%H:00'))
+                    ax1.xaxis.set_major_locator(mdates.HourLocator(interval=max(6, len(clean_data) // 30)))
+                else:  # Nhiều hơn - hiện theo ngày với một số sample giờ
+                    ax1.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
+                    ax1.xaxis.set_major_locator(mdates.DayLocator(interval=max(1, num_days // 15)))
+
+                fig.autofmt_xdate()
+
+            # Legend kết hợp với styling
             lines1, labels1 = ax1.get_legend_handles_labels()
             lines2, labels2 = ax2.get_legend_handles_labels()
-            ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left', fontsize=10)
+            legend = ax1.legend(lines1 + lines2, labels1 + labels2,
+                                loc='upper left', fontsize=10,
+                                frameon=True, fancybox=True, shadow=True,
+                                facecolor='white', edgecolor='#BDC3C7')
 
-            # Màu nền
-            ax1.set_facecolor('#f8f9fa')
+            # Styling cho background
+            ax1.set_facecolor('#F8F9FA')
+
+            # Loại bỏ spines không cần thiết
+            ax1.spines['top'].set_visible(False)
+            ax2.spines['top'].set_visible(False)
+            ax1.spines['right'].set_visible(False)
+            ax2.spines['left'].set_visible(False)
 
             fig.tight_layout()
 
-            # Lưu biểu đồ
-            safe_filename1 = "".join(c for c in y_line if c.isalnum() or c in (' ', '-', '_')).replace(' ', '_')
-            safe_filename2 = "".join(c for c in y_bar if c.isalnum() or c in (' ', '-', '_')).replace(' ', '_')
-            chart_path = os.path.join(chart_folder, f"{safe_filename1}_and_{safe_filename2}_combo.png")
-            plt.savefig(chart_path, dpi=300, bbox_inches='tight', facecolor='white')
+            # Tạo tên file an toàn
+            safe_filename = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).replace(' ', '_')
+            chart_path = os.path.join(chart_folder, f"{safe_filename}_combo.png")
+            plt.savefig(chart_path, dpi=300, bbox_inches='tight', facecolor='white', edgecolor='none')
             plt.close()
 
             return chart_path
 
         except Exception as e:
             plt.close()
+            print(f"      ❌ Lỗi tạo biểu đồ kết hợp hourly: {e}")
+            return None
+
+    def _create_enhanced_line_chart(self, df, x_col, y_col, chart_folder, title):
+        """
+        Tạo biểu đồ đường cho dữ liệu daily
+        """
+        try:
+            # Lọc dữ liệu hợp lệ
+            clean_data = df[[x_col, y_col]].dropna()
+            if clean_data.empty:
+                return None
+
+            plt.figure(figsize=(14, 8))
+
+            # Vẽ biểu đồ đường với style đẹp hơn
+            plt.plot(clean_data[x_col], clean_data[y_col],
+                     marker='o', linewidth=3, markersize=5,
+                     color='#2E86AB', alpha=0.8, markerfacecolor='#A23B72',
+                     markeredgecolor='white', markeredgewidth=1)
+
+            # Định dạng tiêu đề và labels
+            plt.title(title, fontsize=16, fontweight='bold', pad=25, color='#2C3E50')
+            plt.xlabel('Date', fontsize=12, fontweight='bold', color='#34495E')
+            plt.ylabel(y_col, fontsize=12, fontweight='bold', color='#34495E')
+
+            # Grid và styling
+            plt.grid(True, alpha=0.4, linestyle='--', linewidth=0.8)
+            plt.gca().set_facecolor('#F8F9FA')
+
+            # Định dạng trục x cho datetime
+            if pd.api.types.is_datetime64_any_dtype(clean_data[x_col]):
+                plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
+                plt.gca().xaxis.set_major_locator(mdates.DayLocator(interval=max(1, len(clean_data) // 10)))
+                plt.xticks(rotation=45)
+
+            # Styling cho axes
+            ax = plt.gca()
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['left'].set_color('#BDC3C7')
+            ax.spines['bottom'].set_color('#BDC3C7')
+
+            plt.tight_layout()
+
+            # Tạo tên file an toàn
+            safe_filename = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).replace(' ', '_')
+            chart_path = os.path.join(chart_folder, f"{safe_filename}_line.png")
+            plt.savefig(chart_path, dpi=300, bbox_inches='tight', facecolor='white', edgecolor='none')
+            plt.close()
+
+            return chart_path
+
+        except Exception as e:
+            plt.close()
+            print(f"      ❌ Lỗi tạo biểu đồ đường: {e}")
+            return None
+
+    def _create_enhanced_combo_chart(self, df, x_col, y_line, y_bar, chart_folder, title):
+        """
+        Tạo biểu đồ kết hợp (đường + cột) cho dữ liệu daily
+        """
+        try:
+            # Lọc dữ liệu hợp lệ
+            clean_data = df[[x_col, y_line, y_bar]].dropna()
+            if clean_data.empty:
+                return None
+
+            fig, ax1 = plt.subplots(figsize=(14, 8))
+            fig.patch.set_facecolor('white')
+
+            # Trục Y bên trái (đường) - sử dụng gradient color
+            color_line = '#E74C3C'
+            ax1.set_xlabel('Date', fontsize=12, fontweight='bold', color='#34495E')
+            ax1.set_ylabel(y_line, color=color_line, fontsize=12, fontweight='bold')
+
+            line_plot = ax1.plot(clean_data[x_col], clean_data[y_line],
+                                 marker='o', color=color_line, linewidth=3, markersize=5,
+                                 label=y_line, alpha=0.9, markerfacecolor='white',
+                                 markeredgecolor=color_line, markeredgewidth=2)
+
+            ax1.tick_params(axis='y', labelcolor=color_line, labelsize=10)
+            ax1.tick_params(axis='x', labelsize=10, rotation=45)
+            ax1.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+
+            # Trục Y bên phải (cột) - sử dụng gradient color
+            ax2 = ax1.twinx()
+            color_bar = '#3498DB'
+            ax2.set_ylabel(y_bar, color=color_bar, fontsize=12, fontweight='bold')
+
+            # Tính độ rộng cột dựa trên số lượng dữ liệu
+            if len(clean_data) > 30:
+                bar_width = 0.4
+            elif len(clean_data) > 15:
+                bar_width = 0.6
+            else:
+                bar_width = 0.8
+
+            bars = ax2.bar(clean_data[x_col], clean_data[y_bar],
+                           alpha=0.7, color=color_bar, label=y_bar,
+                           width=bar_width, edgecolor='white', linewidth=0.5)
+
+            ax2.tick_params(axis='y', labelcolor=color_bar, labelsize=10)
+
+            # Tiêu đề với styling đẹp
+            plt.title(title, fontsize=16, fontweight='bold', pad=25, color='#2C3E50')
+
+            # Định dạng trục x
+            if pd.api.types.is_datetime64_any_dtype(clean_data[x_col]):
+                fig.autofmt_xdate()
+                ax1.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
+                ax1.xaxis.set_major_locator(mdates.DayLocator(interval=max(1, len(clean_data) // 10)))
+
+            # Legend kết hợp với styling
+            lines1, labels1 = ax1.get_legend_handles_labels()
+            lines2, labels2 = ax2.get_legend_handles_labels()
+            legend = ax1.legend(lines1 + lines2, labels1 + labels2,
+                                loc='upper left', fontsize=11,
+                                frameon=True, fancybox=True, shadow=True,
+                                facecolor='white', edgecolor='#BDC3C7')
+
+            # Styling cho background
+            ax1.set_facecolor('#F8F9FA')
+
+            # Loại bỏ spines không cần thiết
+            ax1.spines['top'].set_visible(False)
+            ax2.spines['top'].set_visible(False)
+            ax1.spines['right'].set_visible(False)
+            ax2.spines['left'].set_visible(False)
+
+            fig.tight_layout()
+
+            # Tạo tên file an toàn
+            safe_filename = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).replace(' ', '_')
+            chart_path = os.path.join(chart_folder, f"{safe_filename}_combo.png")
+            plt.savefig(chart_path, dpi=300, bbox_inches='tight', facecolor='white', edgecolor='none')
+            plt.close()
+
+            return chart_path
+
+        except Exception as e:
+            plt.close()
+            print(f"      ❌ Lỗi tạo biểu đồ kết hợp: {e}")
             return None
 
     def create_comprehensive_report(self, output_dir="output_charts"):
         """
-        Tạo báo cáo tổng hợp CHÍNH - không có dashboard, chỉ biểu đồ
+        Tạo báo cáo tổng hợp với tất cả các biểu đồ cụ thể
         """
-        print(f"\n📋 Tạo báo cáo tổng hợp chỉ biểu đồ...")
+        print(f"\n📋 Tạo báo cáo tổng hợp với các biểu đồ cụ thể...")
 
         try:
-            # Thu thập tất cả file ảnh biểu đồ (không bao gồm dashboard)
+            # Thu thập tất cả file ảnh biểu đồ
             image_files = []
 
             # Biểu đồ Daily
             daily_chart_dir = os.path.join(output_dir, "Chart_daily")
             if os.path.exists(daily_chart_dir):
+                daily_files = []
                 for file in sorted(os.listdir(daily_chart_dir)):
                     if file.endswith('.png'):
-                        image_files.append(os.path.join(daily_chart_dir, file))
+                        daily_files.append(os.path.join(daily_chart_dir, file))
+                image_files.extend(daily_files)
+                print(f"   📊 Tìm thấy {len(daily_files)} biểu đồ Daily")
 
             # Biểu đồ Hourly
             hourly_chart_dir = os.path.join(output_dir, "Chart_hourly")
             if os.path.exists(hourly_chart_dir):
+                hourly_files = []
                 for file in sorted(os.listdir(hourly_chart_dir)):
                     if file.endswith('.png'):
-                        image_files.append(os.path.join(hourly_chart_dir, file))
+                        hourly_files.append(os.path.join(hourly_chart_dir, file))
+                image_files.extend(hourly_files)
+                print(f"   📊 Tìm thấy {len(hourly_files)} biểu đồ Hourly")
 
             if not image_files:
                 print("   ❌ Không tìm thấy file ảnh nào để tạo báo cáo")
                 return None
 
-            print(f"   📊 Tìm thấy {len(image_files)} biểu đồ")
+            print(f"   📊 Tổng cộng {len(image_files)} biểu đồ sẽ được đưa vào báo cáo")
 
-            # Tạo báo cáo tổng hợp 1 trang duy nhất
-            report_path = self._create_single_page_report(image_files, output_dir)
+            # Tạo báo cáo đa trang nếu có nhiều biểu đồ
+            if len(image_files) <= 9:
+                report_path = self._create_single_page_report(image_files, output_dir)
+            else:
+                report_path = self._create_multi_page_report(image_files, output_dir)
 
             if report_path:
                 print(f"✅ Đã tạo báo cáo tổng hợp: {report_path}")
 
                 # Tạo PDF từ PNG
                 try:
-                    pdf_path = report_path.replace('.png', '.pdf')
-                    img = Image.open(report_path)
-                    img.save(pdf_path, "PDF", quality=95)
+                    if isinstance(report_path, list):
+                        # Multi-page report
+                        pdf_path = os.path.join(output_dir, "VoLTE_KPI_Multi_Page_Report.pdf")
+                        self._create_multi_page_pdf(report_path, pdf_path)
+                    else:
+                        # Single-page report
+                        pdf_path = report_path.replace('.png', '.pdf')
+                        img = Image.open(report_path)
+                        img.save(pdf_path, "PDF", quality=95)
+
                     print(f"✅ Đã tạo báo cáo PDF: {pdf_path}")
                 except Exception as e:
                     print(f"⚠️ Không thể tạo PDF: {e}")
@@ -666,7 +1065,7 @@ class VoLTEKPIProcessor:
 
     def _create_single_page_report(self, image_files, output_dir):
         """
-        Tạo báo cáo 1 trang duy nhất với layout tối ưu
+        Tạo báo cáo single page cho ít biểu đồ
         """
         try:
             if not image_files:
@@ -684,36 +1083,28 @@ class VoLTEKPIProcessor:
             if not images:
                 return None
 
-            # Cấu hình layout cho 1 trang A4 (tỉ lệ 210:297)
-            page_width = 2100  # pixels (độ phân giải cao)
-            page_height = 2970  # pixels (tỉ lệ A4)
-
-            # Cấu hình layout
+            # Cấu hình layout cho trang A4
+            page_width = 2100
+            page_height = 2970
             margin = 60
-            header_height = 120
+            header_height = 150
+            footer_height = 80
             spacing = 40
 
-            # Tính toán số biểu đồ trên mỗi hàng và cột để vừa 1 trang
-            total_charts = len(images)
-
-            if total_charts <= 2:
-                cols, rows = 1, total_charts
-            elif total_charts <= 4:
+            # Layout dựa trên số lượng biểu đồ
+            if len(images) <= 4:
                 cols, rows = 2, 2
-            elif total_charts <= 6:
+            elif len(images) <= 6:
                 cols, rows = 2, 3
-            elif total_charts <= 9:
+            else:  # <= 9
                 cols, rows = 3, 3
-            else:
-                # Nếu quá nhiều biểu đồ, chỉ lấy 9 biểu đồ đầu tiên
-                cols, rows = 3, 3
-                images = images[:9]
-                total_charts = 9
-                print(f"   ⚠️ Quá nhiều biểu đồ, chỉ hiển thị {total_charts} biểu đồ đầu tiên")
+
+            # Chỉ lấy số biểu đồ vừa đủ
+            images = images[:cols * rows]
 
             # Tính kích thước biểu đồ
             available_width = page_width - 2 * margin - (cols - 1) * spacing
-            available_height = page_height - header_height - 2 * margin - (rows - 1) * spacing
+            available_height = page_height - header_height - footer_height - 2 * margin - (rows - 1) * spacing
 
             chart_width = available_width // cols
             chart_height = available_height // rows
@@ -722,34 +1113,36 @@ class VoLTEKPIProcessor:
             report_img = Image.new('RGB', (page_width, page_height), 'white')
             draw = ImageDraw.Draw(report_img)
 
-            # Header
+            # Font setup
             try:
-                title_font = ImageFont.truetype("arial.ttf", 48)
-                subtitle_font = ImageFont.truetype("arial.ttf", 24)
+                title_font = ImageFont.truetype("arial.ttf", 42)
+                subtitle_font = ImageFont.truetype("arial.ttf", 22)
+                page_font = ImageFont.truetype("arial.ttf", 18)
             except:
                 title_font = ImageFont.load_default()
                 subtitle_font = ImageFont.load_default()
+                page_font = ImageFont.load_default()
 
-            # Tiêu đề chính
-            title = "VoLTE KPI ANALYSIS REPORT"
+            # Header
+            title = "VoLTE KPI COMPREHENSIVE ANALYSIS REPORT"
             title_bbox = draw.textbbox((0, 0), title, font=title_font)
             title_width = title_bbox[2] - title_bbox[0]
             draw.text(((page_width - title_width) // 2, margin), title,
-                      fill='navy', font=title_font)
+                      fill='#2C3E50', font=title_font)
 
-            # Phụ đề
-            subtitle = f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')} | Charts: {total_charts}"
+            # Subtitle
+            subtitle = f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')} | Charts: {len(images)}"
             subtitle_bbox = draw.textbbox((0, 0), subtitle, font=subtitle_font)
             subtitle_width = subtitle_bbox[2] - subtitle_bbox[0]
-            draw.text(((page_width - subtitle_width) // 2, margin + 60), subtitle,
-                      fill='gray', font=subtitle_font)
+            draw.text(((page_width - subtitle_width) // 2, margin + 55), subtitle,
+                      fill='#7F8C8D', font=subtitle_font)
 
-            # Vẽ đường phân cách
-            line_y = header_height + margin - 10
-            draw.line([(margin, line_y), (page_width - margin, line_y)], fill='lightgray', width=2)
+            # Separator line
+            line_y = header_height + margin - 20
+            draw.line([(margin, line_y), (page_width - margin, line_y)], fill='#BDC3C7', width=3)
 
             # Vẽ các biểu đồ
-            start_y = header_height + margin + 20
+            start_y = header_height + margin
 
             for i, (chart_img, filename) in enumerate(images):
                 row = i // cols
@@ -758,27 +1151,38 @@ class VoLTEKPIProcessor:
                 x = margin + col * (chart_width + spacing)
                 y = start_y + row * (chart_height + spacing)
 
-                # Resize biểu đồ giữ nguyên tỉ lệ
-                chart_resized = self._resize_image_proportional(chart_img, chart_width, chart_height)
+                # Resize biểu đồ
+                chart_resized = self._resize_image_proportional(chart_img, chart_width - 20, chart_height - 40)
 
-                # Căn giữa biểu đồ trong ô
+                # Căn giữa
                 chart_w, chart_h = chart_resized.size
                 center_x = x + (chart_width - chart_w) // 2
                 center_y = y + (chart_height - chart_h) // 2
 
+                # Vẽ background cho biểu đồ
+                bg_rect = [x + 5, y + 5, x + chart_width - 5, y + chart_height - 5]
+                draw.rectangle(bg_rect, fill='#F8F9FA', outline='#E5E5E5', width=2)
+
+                # Paste biểu đồ
                 report_img.paste(chart_resized, (center_x, center_y))
 
-                # Thêm border nhẹ quanh biểu đồ
-                border_rect = [center_x - 2, center_y - 2,
-                               center_x + chart_w + 2, center_y + chart_h + 2]
-                draw.rectangle(border_rect, outline='lightgray', width=1)
+                # Title cho biểu đồ (truncate nếu quá dài)
+                chart_title = filename.replace('.png', '').replace('_', ' ')
+                if len(chart_title) > 40:
+                    chart_title = chart_title[:37] + "..."
+
+                title_bbox = draw.textbbox((0, 0), chart_title, font=page_font)
+                title_width = title_bbox[2] - title_bbox[0]
+                title_x = x + (chart_width - title_width) // 2
+                draw.text((title_x, y + chart_height - 35), chart_title,
+                          fill='#34495E', font=page_font)
 
             # Footer
-            footer_text = f"Total KPIs Analyzed: {total_charts} | Report Format: Single Page Summary"
+            footer_text = f"VoLTE KPI Analysis | Total Charts: {len(images)}"
             footer_bbox = draw.textbbox((0, 0), footer_text, font=subtitle_font)
             footer_width = footer_bbox[2] - footer_bbox[0]
-            draw.text(((page_width - footer_width) // 2, page_height - 60), footer_text,
-                      fill='gray', font=subtitle_font)
+            draw.text(((page_width - footer_width) // 2, page_height - footer_height), footer_text,
+                      fill='#95A5A6', font=subtitle_font)
 
             # Lưu báo cáo
             report_path = os.path.join(output_dir, "VoLTE_KPI_Single_Page_Report.png")
@@ -787,21 +1191,193 @@ class VoLTEKPIProcessor:
             return report_path
 
         except Exception as e:
-            print(f"❌ Lỗi tạo báo cáo 1 trang: {e}")
+            print(f"❌ Lỗi tạo báo cáo single page: {e}")
             return None
+
+    def _create_multi_page_report(self, image_files, output_dir):
+        """
+        Tạo báo cáo nhiều trang cho nhiều biểu đồ
+        """
+        try:
+            charts_per_page = 6  # Số biểu đồ tối đa mỗi trang
+            total_pages = math.ceil(len(image_files) / charts_per_page)
+
+            print(f"   📄 Tạo báo cáo {total_pages} trang với {len(image_files)} biểu đồ")
+
+            page_files = []
+
+            for page_num in range(total_pages):
+                start_idx = page_num * charts_per_page
+                end_idx = min(start_idx + charts_per_page, len(image_files))
+                page_images = image_files[start_idx:end_idx]
+
+                page_path = self._create_report_page(page_images, output_dir, page_num + 1, total_pages)
+                if page_path:
+                    page_files.append(page_path)
+
+            return page_files
+
+        except Exception as e:
+            print(f"❌ Lỗi tạo báo cáo nhiều trang: {e}")
+            return None
+
+    def _create_report_page(self, image_files, output_dir, page_num, total_pages):
+        """
+        Tạo một trang báo cáo
+        """
+        try:
+            if not image_files:
+                return None
+
+            # Đọc tất cả ảnh
+            images = []
+            for img_path in image_files:
+                try:
+                    img = Image.open(img_path)
+                    images.append((img, os.path.basename(img_path)))
+                except Exception as e:
+                    print(f"   ⚠️ Không thể đọc {img_path}: {e}")
+
+            if not images:
+                return None
+
+            # Cấu hình layout cho trang A4
+            page_width = 2100
+            page_height = 2970
+            margin = 60
+            header_height = 150
+            footer_height = 80
+            spacing = 40
+
+            # Layout cho 6 biểu đồ: 2 cột x 3 hàng
+            cols = 2
+            rows = 3
+
+            # Chỉ lấy tối đa 6 biểu đồ
+            images = images[:6]
+
+            # Tính kích thước biểu đồ
+            available_width = page_width - 2 * margin - (cols - 1) * spacing
+            available_height = page_height - header_height - footer_height - 2 * margin - (rows - 1) * spacing
+
+            chart_width = available_width // cols
+            chart_height = available_height // rows
+
+            # Tạo canvas
+            report_img = Image.new('RGB', (page_width, page_height), 'white')
+            draw = ImageDraw.Draw(report_img)
+
+            # Font setup
+            try:
+                title_font = ImageFont.truetype("arial.ttf", 42)
+                subtitle_font = ImageFont.truetype("arial.ttf", 22)
+                page_font = ImageFont.truetype("arial.ttf", 18)
+            except:
+                title_font = ImageFont.load_default()
+                subtitle_font = ImageFont.load_default()
+                page_font = ImageFont.load_default()
+
+            # Header
+            title = "VoLTE KPI COMPREHENSIVE ANALYSIS REPORT"
+            title_bbox = draw.textbbox((0, 0), title, font=title_font)
+            title_width = title_bbox[2] - title_bbox[0]
+            draw.text(((page_width - title_width) // 2, margin), title,
+                      fill='#2C3E50', font=title_font)
+
+            # Subtitle
+            subtitle = f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')} | Page {page_num}/{total_pages}"
+            subtitle_bbox = draw.textbbox((0, 0), subtitle, font=subtitle_font)
+            subtitle_width = subtitle_bbox[2] - subtitle_bbox[0]
+            draw.text(((page_width - subtitle_width) // 2, margin + 55), subtitle,
+                      fill='#7F8C8D', font=subtitle_font)
+
+            # Separator line
+            line_y = header_height + margin - 20
+            draw.line([(margin, line_y), (page_width - margin, line_y)], fill='#BDC3C7', width=3)
+
+            # Vẽ các biểu đồ
+            start_y = header_height + margin
+
+            for i, (chart_img, filename) in enumerate(images):
+                row = i // cols
+                col = i % cols
+
+                x = margin + col * (chart_width + spacing)
+                y = start_y + row * (chart_height + spacing)
+
+                # Resize biểu đồ
+                chart_resized = self._resize_image_proportional(chart_img, chart_width - 20, chart_height - 40)
+
+                # Căn giữa
+                chart_w, chart_h = chart_resized.size
+                center_x = x + (chart_width - chart_w) // 2
+                center_y = y + (chart_height - chart_h) // 2
+
+                # Vẽ background cho biểu đồ
+                bg_rect = [x + 5, y + 5, x + chart_width - 5, y + chart_height - 5]
+                draw.rectangle(bg_rect, fill='#F8F9FA', outline='#E5E5E5', width=2)
+
+                # Paste biểu đồ
+                report_img.paste(chart_resized, (center_x, center_y))
+
+                # Title cho biểu đồ (truncate nếu quá dài)
+                chart_title = filename.replace('.png', '').replace('_', ' ')
+                if len(chart_title) > 40:
+                    chart_title = chart_title[:37] + "..."
+
+                title_bbox = draw.textbbox((0, 0), chart_title, font=page_font)
+                title_width = title_bbox[2] - title_bbox[0]
+                title_x = x + (chart_width - title_width) // 2
+                draw.text((title_x, y + chart_height - 35), chart_title,
+                          fill='#34495E', font=page_font)
+
+            # Footer
+            footer_text = f"VoLTE KPI Analysis | Charts on this page: {len(images)}"
+            footer_bbox = draw.textbbox((0, 0), footer_text, font=subtitle_font)
+            footer_width = footer_bbox[2] - footer_bbox[0]
+            draw.text(((page_width - footer_width) // 2, page_height - footer_height), footer_text,
+                      fill='#95A5A6', font=subtitle_font)
+
+            # Lưu trang
+            page_path = os.path.join(output_dir, f"VoLTE_KPI_Report_Page_{page_num}.png")
+            report_img.save(page_path, "PNG", quality=95, dpi=(300, 300))
+
+            return page_path
+
+        except Exception as e:
+            print(f"❌ Lỗi tạo trang báo cáo {page_num}: {e}")
+            return None
+
+    def _create_multi_page_pdf(self, page_files, pdf_path):
+        """
+        Tạo PDF từ nhiều trang PNG
+        """
+        try:
+            if not page_files:
+                return False
+
+            images = []
+            for page_file in page_files:
+                img = Image.open(page_file)
+                images.append(img)
+
+            # Lưu PDF
+            images[0].save(pdf_path, "PDF", save_all=True, append_images=images[1:], quality=95)
+            return True
+
+        except Exception as e:
+            print(f"❌ Lỗi tạo PDF nhiều trang: {e}")
+            return False
 
     def _resize_image_proportional(self, img, max_width, max_height):
         """
-        Resize ảnh giữ nguyên tỉ lệ và fit vào kích thước cho phép
+        Resize ảnh giữ nguyên tỉ lệ
         """
         original_width, original_height = img.size
-
-        # Tính tỉ lệ resize
         ratio_w = max_width / original_width
         ratio_h = max_height / original_height
-        ratio = min(ratio_w, ratio_h)  # Chọn tỉ lệ nhỏ hơn để đảm bảo fit
+        ratio = min(ratio_w, ratio_h)
 
-        # Tính kích thước mới
         new_width = int(original_width * ratio)
         new_height = int(original_height * ratio)
 
@@ -809,9 +1385,9 @@ class VoLTEKPIProcessor:
 
     def process_complete_workflow(self, excel_path, output_dir="output_charts"):
         """
-        Thực hiện quy trình hoàn chỉnh từ Excel đến báo cáo (KHÔNG có dashboard)
+        Thực hiện quy trình hoàn chỉnh với biểu đồ cụ thể
         """
-        print(f"\n🎯 BẮT ĐẦU QUY TRÌNH XỬ LÝ HOÀN CHỈNH")
+        print(f"\n🎯 BẮT ĐẦU QUY TRÌNH XỬ LÝ HOÀN CHỈNH - ENHANCED VERSION WITH FIXED HOURLY CHARTS")
         print(f"📁 File đầu vào: {excel_path}")
         print(f"📁 Thư mục đầu ra: {output_dir}")
         print("=" * 70)
@@ -825,7 +1401,7 @@ class VoLTEKPIProcessor:
             return False
 
         # Bước 2: Làm sạch dữ liệu
-        print("\n🧹 BƯỚC 2: LÀM SẠCH DỮ LIỆU")
+        print("\n🧹 BƯỚC 2: LÀM SẠCH DỮ LIỆU VỚI CẢI THIỆN CHO HOURLY")
         cleaned_dataframes = {}
 
         for sheet_name, df in dataframes.items():
@@ -847,61 +1423,93 @@ class VoLTEKPIProcessor:
             print("❌ Không thể lưu file CSV!")
             return False
 
-        # Bước 4: Tạo biểu đồ
-        print("\n🎨 BƯỚC 4: TẠO BIỂU ĐỒ")
-        self.create_charts_from_csv(output_dir)
+        # Bước 4: Tạo biểu đồ cụ thể với cải thiện hourly
+        print("\n🎨 BƯỚC 4: TẠO CÁC BIỂU ĐỒ CỤ THỂ VỚI HOURLY CHARTS CẢI THIỆN")
+        created_charts = self.create_specific_charts(output_dir)
 
-        # Bước 5: Tạo báo cáo tổng hợp (KHÔNG có dashboard)
+        if not created_charts:
+            print("⚠️ Không tạo được biểu đồ nào!")
+            return False
+
+        # Bước 5: Tạo báo cáo tổng hợp
         print("\n📋 BƯỚC 5: TẠO BÁO CÁO TỔNG HỢP")
         report_path = self.create_comprehensive_report(output_dir)
 
         # Tổng kết
         print("\n" + "=" * 70)
-        print("🎉 HOÀN TẤT QUY TRÌNH XỬ LÝ!")
+        print("🎉 HOÀN TẤT QUY TRÌNH XỬ LÝ NÂNG CAO VỚI HOURLY CHARTS CẢI THIỆN!")
         print("=" * 70)
         print(f"📁 Kết quả lưu tại: {output_dir}")
+        print(f"📊 Đã tạo {len(created_charts)} biểu đồ cụ thể")
+
         print("\n📊 Cấu trúc kết quả:")
         print("📂 output_charts/")
 
+        # Hiển thị CSV files
         for sheet_name, csv_path in csv_files.items():
             print(f"   📄 {os.path.basename(csv_path)}")
 
+        # Hiển thị biểu đồ
         chart_folders = ['Chart_daily', 'Chart_hourly']
         for folder in chart_folders:
             folder_path = os.path.join(output_dir, folder)
             if os.path.exists(folder_path):
                 chart_count = len([f for f in os.listdir(folder_path) if f.endswith('.png')])
-                print(f"   📂 {folder}/ ({chart_count} biểu đồ)")
+                print(f"   📂 {folder}/ ({chart_count} biểu đồ cụ thể)")
 
-        if report_path and os.path.exists(report_path):
-            print(f"   📊 VoLTE_KPI_Single_Page_Report.png")
+        # Hiển thị báo cáo
+        if report_path:
+            if isinstance(report_path, list):
+                print(f"   📊 VoLTE_KPI_Report_Page_*.png ({len(report_path)} trang)")
+                print(f"   📊 VoLTE_KPI_Multi_Page_Report.pdf")
+            else:
+                print(f"   📊 {os.path.basename(report_path)}")
+                pdf_path = report_path.replace('.png', '.pdf')
+                if os.path.exists(pdf_path):
+                    print(f"   📊 {os.path.basename(pdf_path)}")
 
-        pdf_path = os.path.join(output_dir, "VoLTE_KPI_Single_Page_Report.pdf")
-        if os.path.exists(pdf_path):
-            print(f"   📊 VoLTE_KPI_Single_Page_Report.pdf")
+        print("\n✨ Cải thiện đặc biệt cho Hourly Charts:")
+        print("   🕐 Xử lý datetime chính xác cho dữ liệu hourly")
+        print("   📅 Format trục thời gian phù hợp với hourly data")
+        print("   📊 Bar width tự động điều chỉnh theo density dữ liệu")
+        print("   🎨 Styling tối ưu cho visualization hourly data")
 
+        print("\n✨ Các biểu đồ được tạo theo đúng yêu cầu:")
+        print("   📈 VoLTE Traffic (Erl) - Line charts (Daily & Hourly)")
+        print("   📊 SRVCC HOSR & Att - Combo charts (Daily & Hourly)")
+        print("   📊 VoLTE CSSR & RAB Att QCI1/QCI5 - Combo charts (Daily & Hourly)")
+        print("   📊 VoLTE CDR & Call Drop QCI1/QCI5 - Combo charts (Daily & Hourly)")
+        print("   📊 VOLTE UL/DL Packet Loss - Combo charts (Daily & Hourly)")
         print("=" * 70)
+
         return True
 
 
 def main():
     """
-    Hàm main để chạy chương trình
+    Hàm main để chạy chương trình với các biểu đồ cụ thể và cải thiện hourly
     """
-    print("🚀 VOLTE KPI DATA PROCESSING SYSTEM")
+    print("🚀 VOLTE KPI DATA PROCESSING SYSTEM - ENHANCED VERSION WITH FIXED HOURLY CHARTS")
     print("=" * 70)
-    print("📋 Chức năng:")
-    print("   ✅ Chuyển đổi Excel sang CSV (chỉ 2 sheet: Net KPI_Daily, Net KPI_Hourly)")
+    print("📋 Chức năng nâng cao:")
+    print("   ✅ Chuyển đổi Excel sang CSV")
     print("   ✅ Làm sạch dữ liệu chuyên sâu")
-    print("   ✅ Tạo biểu đồ đường và biểu đồ kết hợp")
-    print("   ✅ Tạo báo cáo tổng hợp 1 trang PNG/PDF (KHÔNG có dashboard)")
+    print("   ✅ Xử lý datetime chính xác cho hourly data")
+    print("   ✅ Tạo các biểu đồ CỤ THỂ theo yêu cầu:")
+    print("      📈 VoLTE Traffic (Erl) - Biểu đồ đường")
+    print("      📊 SRVCC HOSR & HO Att - Biểu đồ kết hợp")
+    print("      📊 VoLTE CSSR & RAB Att QCI1/QCI5 - Biểu đồ kết hợp")
+    print("      📊 VoLTE CDR & Call Drop QCI1/QCI5 - Biểu đồ kết hợp")
+    print("      📊 VOLTE UL/DL Packet Loss - Biểu đồ kết hợp")
+    print("   ✅ Format đặc biệt cho biểu đồ hourly")
+    print("   ✅ Tạo báo cáo tổng hợp PNG/PDF (đơn trang hoặc nhiều trang)")
     print("=" * 70)
 
     # Khởi tạo processor
     processor = VoLTEKPIProcessor()
 
-    # Đường dẫn file Excel (thay đổi theo file thực tế của bạn)
-    excel_file = "4G_KPI Cell VoLTE_20250807.xlsx"
+    # Đường dẫn file Excel
+    excel_file = "4G_KPI Cell VoLTE_ThanhTT.xlsx"
 
     # Kiểm tra file tồn tại
     if not os.path.exists(excel_file):
@@ -915,38 +1523,11 @@ def main():
 
     if success:
         print("\n🎊 THÀNH CÔNG! Hãy kiểm tra thư mục 'output_charts'")
-        print("📊 Báo cáo tổng hợp được lưu dạng PNG và PDF 1 trang duy nhất")
+        print("📊 Tất cả các biểu đồ cụ thể đã được tạo theo đúng yêu cầu")
+        print("🕐 Biểu đồ hourly đã được cải thiện với format thời gian chính xác")
+        print("📄 Báo cáo tổng hợp được lưu dạng PNG và PDF")
     else:
         print("\n❌ CÓ LỖI XẢY RA! Vui lòng kiểm tra lại dữ liệu đầu vào")
-
-
-# Utility function để fix file CSV bị lỗi (nếu cần)
-def fix_csv_file(input_csv, output_csv):
-    """
-    Hàm tiện ích để sửa file CSV bị lỗi
-    """
-    processor = VoLTEKPIProcessor()
-
-    try:
-        print(f"🔧 Đang sửa file CSV: {input_csv}")
-
-        # Đọc file với header=None
-        df = pd.read_csv(input_csv, header=None)
-
-        # Sử dụng hàm làm sạch của processor
-        df_cleaned = processor.clean_dataframe_enhanced(df, "CSV_Fix")
-
-        if df_cleaned is not None:
-            df_cleaned.to_csv(output_csv, index=False, encoding='utf-8-sig')
-            print(f"✅ Đã sửa và lưu: {output_csv}")
-            return True
-        else:
-            print("❌ Không thể sửa file CSV")
-            return False
-
-    except Exception as e:
-        print(f"❌ Lỗi khi sửa file: {e}")
-        return False
 
 
 if __name__ == "__main__":
@@ -976,6 +1557,4 @@ if __name__ == "__main__":
         exit()
 
     print("\n")
-
-    # Chạy chương trình chính
     main()
