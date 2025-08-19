@@ -180,7 +180,7 @@ class ExcelCSVProcessor:
                                                  "Daily 4G KPI Dashboard (24h)", "#FFA500")
 
             # Tạo dashboard cho BH
-            self._create_dashboard_subplot_fixed(ax2, df_bh, latest_dates, date_col, kpi_mapping,
+            self. _create_dashboard_subplot_fixed(ax2, df_bh, latest_dates, date_col, kpi_mapping,
                                                  "Daily 4G KPI Dashboard (BH)", "#FF6B35")
 
             plt.tight_layout()
@@ -401,8 +401,20 @@ class ExcelCSVProcessor:
 
     def _draw_table_fixed(self, ax, header, data, header_color, x_start, y_start, col_width, row_height):
         """
-        Vẽ bảng lên subplot với xử lý màu sắc đúng
+        Vẽ bảng lên subplot với xử lý màu sắc đúng và tô đỏ các ô không đạt target
         """
+        # Define target values for each KPI column
+        target_values = {
+            'ePS CSSR': 99.00,
+            'ePS CDR': 1.20,
+            'CSFB SR': 99.00,
+            'PS Traffic (GB)': None,  # No target for PS Traffic
+            'IntraF HOSR': 98.00,
+            'InterF HOSR': 96.00,
+            'InterRAT HOSR (L2W)': 96.00,
+            'MIMO Rate': 20.00
+        }
+
         # Vẽ header
         for i, col_name in enumerate(header):
             x = x_start + i * col_width
@@ -421,53 +433,105 @@ class ExcelCSVProcessor:
                 x = x_start + col_idx * col_width
 
                 # Xác định màu nền
+                cell_bg_color = 'white'  # Default background color
+
                 if row_idx == 0:  # Target row
-                    bg_color = '#FFFACD'  # Light yellow
+                    cell_bg_color = '#FFFACD'  # Light yellow
                 elif 'Compare' in str(row_data[0]):  # Compare rows
-                    bg_color = '#E6E6FA'  # Lavender
-                else:  # Data rows
-                    bg_color = 'white'
+                    cell_bg_color = '#E6E6FA'  # Lavender
+                else:  # Data rows - check if it's a date row and needs red highlighting
+                    if col_idx > 0 and col_idx < len(header):  # Skip Item column, within header bounds
+                        kpi_name = header[col_idx]
+                        date_row_indicator = str(row_data[0])
+
+                        # Check if this is a date row (contains month names)
+                        is_date_row = any(month in date_row_indicator for month in
+                                          ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                                           'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'])
+
+                        if is_date_row and kpi_name in target_values and target_values[kpi_name] is not None:
+                            try:
+                                # Clean the value string and convert to float
+                                clean_value = str(value).strip().replace(',', '')
+                                if clean_value != '-' and clean_value != '':
+                                    actual_value = float(clean_value)
+                                    target = target_values[kpi_name]
+
+                                    # Check conditions for red highlighting
+                                    should_highlight_red = False
+
+                                    if kpi_name == 'ePS CSSR' and actual_value < target:
+                                        should_highlight_red = True
+                                    elif kpi_name == 'ePS CDR' and actual_value > target:
+                                        should_highlight_red = True
+                                    elif kpi_name == 'CSFB SR' and actual_value < target:
+                                        should_highlight_red = True
+                                    elif kpi_name == 'IntraF HOSR' and actual_value < target:
+                                        should_highlight_red = True
+                                    elif kpi_name == 'InterF HOSR' and actual_value < target:
+                                        should_highlight_red = True
+                                    elif kpi_name == 'InterRAT HOSR (L2W)' and actual_value < target:
+                                        should_highlight_red = True
+                                    elif kpi_name == 'MIMO Rate' and actual_value < target:
+                                        should_highlight_red = True
+
+                                    if should_highlight_red:
+                                        cell_bg_color = '#FFB3B3'  # Light red background
+
+                            except (ValueError, TypeError):
+                                pass  # Keep default background if value can't be converted
 
                 # Cell background
                 rect = plt.Rectangle((x, y), col_width, row_height,
-                                     facecolor=bg_color, edgecolor='black', linewidth=1)
+                                     facecolor=cell_bg_color, edgecolor='black', linewidth=1)
                 ax.add_patch(rect)
 
                 # Cell text với màu sắc theo giá trị
                 text_color = 'black'
                 font_weight = 'normal'
-                arrow = "" #mũi tên
+                arrow = ""
 
-                # Nếu là compare row và có giá trị số
+                # Check if cell background is red, then make text bold and darker
+                if cell_bg_color == '#FFB3B3':
+                    text_color = '#B22222'  # Dark red text for red background cells
+                    font_weight = 'bold'
+
+                # Xử lý Compare rows với arrows
                 if 'Compare' in str(row_data[0]) and col_idx > 0:
                     value_str = str(value)
-                    value_float = value_str.strip().replace("%", "")
-                    vf = float(value_float)
                     if value_str != '-':
                         try:
-                            # Kiểm tra nếu là số dương/âm
-                            if '+' in value_str:
-                                if vf >= 0 and vf <= 1 :
-                                    text_color = 'black'
-                                    font_weight = 'bold'
-                                    arrow = "→"
-                                elif vf > 1:
-                                    text_color = 'green'
-                                    font_weight = 'bold'
-                                    arrow = "↑"
-                            elif value_str.startswith('-'):
-                                if vf < 0 and vf >= -1:
-                                    text_color = 'black'
-                                    font_weight = 'bold'
-                                    arrow = "→"
-                                elif vf < -1:
-                                    text_color = 'red'
-                                    font_weight = 'bold'
-                                    arrow = "↓"
-                        except:
+                            # Extract numeric value from percentage string
+                            value_clean = value_str.replace('%', '').replace('+', '').strip()
+                            if value_clean:
+                                value_float = float(value_clean)
+
+                                # Determine arrow and color based on value
+                                if value_str.startswith('+'):
+                                    if abs(value_float) <= 1:
+                                        text_color = 'black'
+                                        font_weight = 'bold'
+                                        arrow = "→"
+                                    else:
+                                        text_color = 'green'
+                                        font_weight = 'bold'
+                                        arrow = "↑"
+                                elif value_str.startswith('-'):
+                                    if abs(value_float) <= 1:
+                                        text_color = 'black'
+                                        font_weight = 'bold'
+                                        arrow = "→"
+                                    else:
+                                        text_color = 'red'
+                                        font_weight = 'bold'
+                                        arrow = "↓"
+                        except (ValueError, TypeError):
                             pass
+
+                # Display the value with arrow if applicable
                 display_value = f"{value} {arrow}" if arrow else str(value)
                 font_size = 8 if len(display_value) > 10 else 9
+
                 ax.text(x + col_width / 2, y + row_height / 2, display_value,
                         ha='center', va='center', fontsize=font_size,
                         color=text_color, weight=font_weight)
