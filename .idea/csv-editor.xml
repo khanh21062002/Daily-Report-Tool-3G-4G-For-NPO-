@@ -3,21 +3,28 @@
   <component name="CsvFileAttributes">
     <option name="attributeMap">
       <map>
-        <entry key="\4G_KPI_Cell_FDD_Data_24h_clean.csv">
+        <entry key="\3G\3G_RNO_KPIs_BH_ZTE_2025-08-06.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value=":" />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="\3G\3G_RNO_KPIs_BH_scheduled2025-08-06.csv">
           <value>
             <Attribute>
               <option name="separator" value="," />
             </Attribute>
           </value>
         </entry>
-        <entry key="\output_charts\Net_KPI_Daily.csv">
+        <entry key="\3G\3G_RNO_KPIs_WD_ZTE_2025-08-06.csv">
           <value>
             <Attribute>
               <option name="separator" value="," />
             </Attribute>
           </value>
         </entry>
-        <entry key="\output_charts\Net_KPI_Hourly.csv">
+        <entry key="\3G\3G_RNO_KPIs_WD_scheduled2025-08-06.csv">
           <value>
             <Attribute>
               <option name="separator" value="," />
