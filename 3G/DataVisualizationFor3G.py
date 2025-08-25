@@ -140,20 +140,19 @@ class ExcelCSVProcessorFor3G:
             return False
 
     def aggregate_daily_data(self, df, date_col):
-        """
-        Tổng hợp dữ liệu theo ngày bằng cách lấy trung bình của 4 RNC (HLRE01, HLRE02, HLRE03, HLRE04)
-        """
         try:
             target_rncs = ['HLRE01', 'HLRE02', 'HLRE03', 'HLRE04']
             df_filtered = df[df['RNC Id'].isin(target_rncs)].copy()
+
+            for col in df_filtered.columns:
+                if col not in [date_col, 'RNC Id']:
+                    df_filtered[col] = pd.to_numeric(df_filtered[col], errors='coerce')
 
             numeric_cols = df_filtered.select_dtypes(include=[np.number]).columns.tolist()
             if date_col in numeric_cols:
                 numeric_cols.remove(date_col)
 
-            agg_dict = {}
-            for col in numeric_cols:
-                agg_dict[col] = 'mean'
+            agg_dict = {col: 'mean' for col in numeric_cols}
 
             non_numeric_cols = df_filtered.select_dtypes(exclude=[np.number]).columns.tolist()
             for col in non_numeric_cols:
@@ -166,13 +165,45 @@ class ExcelCSVProcessorFor3G:
                 if col in df_aggregated.columns:
                     df_aggregated[col] = df_aggregated[col].round(2)
 
-            print(f"✅ Đã tổng hợp dữ liệu: {len(df_aggregated)} ngày từ {len(df_filtered)} bản ghi")
+            print(f"✅ Đã tổng hợp dữ liệu của Ericsson: {len(df_aggregated)} ngày từ {len(df_filtered)} bản ghi")
             return df_aggregated
 
         except Exception as e:
             print(f"❌ Lỗi khi tổng hợp dữ liệu: {e}")
             return df
 
+    def aggregate_daily_data_ZTE(self, df, date_col):
+        try:
+            target_rncs = ['HNRZ01(101)', 'HNRZ01(102)']
+            df_filtered = df[df['RNC Managed NE Name'].isin(target_rncs)].copy()
+
+            for col in df_filtered.columns:
+                if col not in [date_col, 'RNC Managed NE Name']:
+                    df_filtered[col] = pd.to_numeric(df_filtered[col], errors='coerce')
+
+            numeric_cols = df_filtered.select_dtypes(include=[np.number]).columns.tolist()
+            if date_col in numeric_cols:
+                numeric_cols.remove(date_col)
+
+            agg_dict = {col: 'mean' for col in numeric_cols}
+
+            non_numeric_cols = df_filtered.select_dtypes(exclude=[np.number]).columns.tolist()
+            for col in non_numeric_cols:
+                if col not in [date_col, 'RNC Managed NE Name']:
+                    agg_dict[col] = 'first'
+
+            df_aggregated = df_filtered.groupby(date_col).agg(agg_dict).reset_index()
+
+            for col in numeric_cols:
+                if col in df_aggregated.columns:
+                    df_aggregated[col] = df_aggregated[col].round(2)
+
+            print(f"✅ Đã tổng hợp dữ liệu của ZTE: {len(df_aggregated)} ngày từ {len(df_filtered)} bản ghi")
+            return df_aggregated
+
+        except Exception as e:
+            print(f"❌ Lỗi khi tổng hợp dữ liệu: {e}")
+            return df
     def create_daily_dashboard_table_ericsson(self, csv_all_day, csv_busy_hour, output_dir):
         try:
             print("\n📊 Đang tạo bảng Daily Dashboard của ericsson...")
@@ -249,10 +280,85 @@ class ExcelCSVProcessorFor3G:
         except Exception as e:
             print(f"❌ Lỗi khi tạo Daily Dashboard: {e}")
             return None
+    def create_daily_dashboard_table_ZTE(self, csv_all_day, csv_busy_hour, output_dir):
+        try:
+            print("\n📊 Đang tạo bảng Daily Dashboard của ZTE...")
+
+            df_all = pd.read_csv(csv_all_day)
+            df_bh = pd.read_csv(csv_busy_hour)
+
+            date_col = df_all.columns[1]
+            df_all[date_col] = pd.to_datetime(df_all[date_col])
+            df_bh[date_col] = pd.to_datetime(df_bh[date_col])
+
+            print(f"📅 Dữ liệu gốc - 24h: {len(df_all)} bản ghi, BH: {len(df_bh)} bản ghi")
+
+            df_all_agg = self.aggregate_daily_data_ZTE(df_all, date_col)
+            df_bh_agg = self.aggregate_daily_data_ZTE(df_bh, date_col)
+
+            print(f"📈 Dữ liệu sau tổng hợp - 24h: {len(df_all_agg)} ngày, BH: {len(df_bh_agg)} ngày")
+
+            # Improved KPI mapping with better column matching
+            kpi_mapping = {
+                'CS CSSR': ['CS CSSR_VNM', 'CS CSSR', 'CS Call Setup Success Rate', 'CS Call Setup Success Rate (%)'],
+                'HSDPA CSSR': ['HSDPA CSSR (%)', 'HSDPA CSSR', 'HSDPA Call Setup Success Rate',
+                               'HSDPA Call Setup Success Rate (%)', 'PS CSSR'],
+                'CS CDR': ['CS CDR_VNM', 'CS CDR', 'CS Call Drop Rate', 'CS Call Drop Rate (%)'],
+                'HSDPA CDR': ['PS CDR_HSDPA_VNM', 'HSDPA CDR', 'HSDPA Call Drop Rate', 'HSDPA Call Drop Rate (%)',
+                              'PS CDR_HSPDA'],
+                'CS Traffic (Erl)': ['CS Traffic (Erl)', 'CS Traffic (Erlang)', 'CS Traffic (Erl)_VNM'],
+                'CS Soft HOSR': ['CS Soft HOSR_VNM', 'CS Soft HOSR', 'CS Soft Handover Success Rate',
+                                 'CS Soft Handover Success Rate (%)'],
+                'HSDPA Soft HOSR': ['PS Soft HOSR_VNM', 'HSDPA Soft HOSR', 'HSDPA Soft Handover Success Rate',
+                                    'HSDPA Soft Handover Success Rate (%)', 'PS Soft HOSR'],
+                'CS IRAT HOSR': ['CS InterRAT HOSR_VNM', 'CS IRAT HOSR', 'CS Inter-RAT Handover Success Rate',
+                                 'CS Inter-RAT Handover Success Rate (%)'],
+                'PS IRAT HOSR': ['PS InterRAT HOSR_VNM', 'PS IRAT HOSR', 'PS Inter-RAT Handover Success Rate',
+                                 'PS Inter-RAT Handover Success Rate (%)'],
+                'PS Traffic (GB)': ['PS Traffic (GB)', 'PS Traffic (Gigabytes)', 'PS Traffic'],
+            }
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 12))
+            fig.suptitle('Daily 3G KPI Dashboard of ZTE', fontsize=16, fontweight='bold', y=0.95)
+
+            # Get dates with better logic
+            latest = df_all_agg[date_col].max()
+            prev = df_all_agg[df_all_agg[date_col] < latest][date_col].max() if pd.notna(latest) else pd.NaT
+            week_candidate = latest - timedelta(days=7) if pd.notna(latest) else pd.NaT
+            week_date = df_all_agg[df_all_agg[date_col] <= week_candidate][date_col].max() if pd.notna(
+                week_candidate) else pd.NaT
+
+            latest_dates = []
+            if pd.notna(latest):
+                latest_dates.append(latest)
+            if pd.notna(prev):
+                latest_dates.append(prev)
+            if pd.notna(week_date) and (week_date not in latest_dates):
+                latest_dates.append(week_date)
+
+            # Create improved dashboards
+            self._create_improved_dashboard_subplot(ax1, df_all_agg, latest_dates, date_col, kpi_mapping,
+                                                    "Daily 3G KPI Dashboard of ZTE (24h)", "#FFA500")
+
+            self._create_improved_dashboard_subplot(ax2, df_bh_agg, latest_dates, date_col, kpi_mapping,
+                                                    "Daily 3G KPI Dashboard of ZTE (BH)", "#FF6B35")
+
+            plt.tight_layout()
+            plt.subplots_adjust(top=0.93)
+
+            dashboard_path = os.path.join(output_dir, "Daily_3G_KPI_Dashboard_of_ZTE.png")
+            plt.savefig(dashboard_path, dpi=300, bbox_inches='tight', facecolor='white')
+            plt.close()
+
+            print(f"✅ Đã tạo bảng Daily Dashboard của ZTE: {dashboard_path}")
+            return dashboard_path
+
+        except Exception as e:
+            print(f"❌ Lỗi khi tạo Daily Dashboard: {e}")
+            return None
 
     def _create_improved_dashboard_subplot(self, ax, df, latest_dates, date_col, kpi_mapping, title, header_color):
         """
-        Tạo dashboard với layout cải thiện như hình mẫu
+        Tạo dashboard với layout cải thiện
         """
         ax.clear()
         ax.set_xlim(0, 10)
@@ -387,29 +493,26 @@ class ExcelCSVProcessorFor3G:
 
     def _get_kpi_value(self, df, date, date_col, kpi_name, kpi_mapping):
         """
-        Get KPI value with improved column matching
+        Lấy KPI theo trung bình cộng trong ngày (không lấy bản ghi đầu tiên).
         """
         possible_cols = kpi_mapping.get(kpi_name, [kpi_name])
 
-        # Get data for the specific date
+        # Lọc dữ liệu cho ngày cần lấy
         day_data = df[df[date_col].dt.date == date.date()]
         if day_data.empty:
             return None
 
-        # Try each possible column name
         for col_name in possible_cols:
-            # Exact match first
             if col_name in df.columns:
-                val = day_data[col_name].iloc[0]
-                if pd.notna(val) and val != '' and str(val).strip() != '':
+                val = day_data[col_name].mean()
+                if pd.notna(val):
                     return float(val)
 
-            # Fuzzy match - look for columns containing the key words
             for actual_col in df.columns:
                 if col_name.lower().replace(' ', '').replace('(', '').replace(')', '') in \
                         actual_col.lower().replace(' ', '').replace('(', '').replace(')', ''):
-                    val = day_data[actual_col].iloc[0]
-                    if pd.notna(val) and val != '' and str(val).strip() != '':
+                    val = day_data[actual_col].mean()
+                    if pd.notna(val):
                         return float(val)
 
         return None
@@ -527,6 +630,9 @@ class ExcelCSVProcessorFor3G:
 
         return bg_color, text_color, font_weight, display_value
 
+    # Các hàm create_daily_dashboard_table_ericsson và create_daily_dashboard_table_ZTE giữ nguyên
+    # (chỉ sửa _get_kpi_value để dùng trung bình cộng)
+
 
 def main():
     processor = ExcelCSVProcessorFor3G()
@@ -569,5 +675,14 @@ def main():
         os.makedirs(output_dir_ericsson, exist_ok=True)
         processor.create_daily_dashboard_table_ericsson(csv_all_day_ericsson, csv_busy_hour_ericsson,
                                                         output_dir_ericsson)
+    if len(converted_files_zte) >= 2:
+        csv_files_zte = list(converted_files_zte.values())
+        csv_all_day_zte = csv_files_zte[0]
+        csv_busy_hour_zte = csv_files_zte[1]
+        output_dir_zte = "output_zte"
+        os.makedirs(output_dir_zte, exist_ok=True)
+        processor.create_daily_dashboard_table_ZTE(csv_all_day_zte, csv_busy_hour_zte, output_dir_zte)
+
+
 if __name__ == "__main__":
     main()
