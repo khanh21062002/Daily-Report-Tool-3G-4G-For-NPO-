@@ -1,0 +1,710 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from matplotlib.colors import LinearSegmentedColormap
+import seaborn as sns
+from datetime import datetime, timedelta
+import os
+import glob
+import warnings
+
+warnings.filterwarnings('ignore')
+plt.rcParams['font.family'] = ['DejaVu Sans', 'Arial', 'sans-serif']
+plt.rcParams['axes.unicode_minus'] = False
+
+class Enhanced3GDashboard:
+    def __init__(self, csv_folder_path=None, csv_files_list=None):
+        """
+        Initialize dashboard with multiple CSV files
+        Args:
+            csv_folder_path: Path to folder containing CSV files
+            csv_files_list: List of CSV file paths
+        """
+        self.df_combined = pd.DataFrame()
+        self.ericsson_data = pd.DataFrame()
+        self.zte_data = pd.DataFrame()
+
+        if csv_folder_path:
+            self.load_csv_from_folder(csv_folder_path)
+        elif csv_files_list:
+            self.load_csv_from_list(csv_files_list)
+
+        self.prepare_data()
+
+    def load_csv_from_folder(self, folder_path):
+        """Load all CSV files from a folder"""
+        csv_files = glob.glob(os.path.join(folder_path, "*.csv"))
+        self.load_csv_from_list(csv_files)
+
+    def load_csv_from_list(self, csv_files):
+        """Load multiple CSV files"""
+        all_data = []
+
+        for file_path in csv_files:
+            try:
+                print(f"Loading: {os.path.basename(file_path)}")
+                df = pd.read_csv(file_path)
+
+                # Add file source information
+                df['Source_File'] = os.path.basename(file_path)
+
+                # Determine vendor based on filename or columns
+                if 'ZTE' in file_path.upper() or any('_VNM' in col for col in df.columns):
+                    df['Vendor'] = 'ZTE'
+                    if self.zte_data.empty:
+                        self.zte_data = df.copy()
+                    else:
+                        self.zte_data = pd.concat([self.zte_data, df], ignore_index=True)
+                else:
+                    df['Vendor'] = 'Ericsson'
+                    if self.ericsson_data.empty:
+                        self.ericsson_data = df.copy()
+                    else:
+                        self.ericsson_data = pd.concat([self.ericsson_data, df], ignore_index=True)
+
+                all_data.append(df)
+
+            except Exception as e:
+                print(f"Error loading {file_path}: {str(e)}")
+
+        if all_data:
+            self.df_combined = pd.concat(all_data, ignore_index=True)
+
+    def prepare_data(self):
+        """Prepare and clean data for dashboard"""
+        if self.df_combined.empty:
+            print("No data loaded!")
+            return
+
+        # Convert date columns
+        for df in [self.df_combined, self.ericsson_data, self.zte_data]:
+            if df.empty:
+                continue
+
+            if 'Date' in df.columns:
+                try:
+                    df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+                except:
+                    print(f"Warning: Could not convert Date column")
+            elif 'Start Time' in df.columns:
+                try:
+                    df['Date'] = pd.to_datetime(df['Start Time'], errors='coerce')
+                except:
+                    print(f"Warning: Could not convert Start Time column")
+
+        # Remove rows where Date conversion failed
+        self.df_combined = self.df_combined.dropna(subset=['Date'])
+        self.ericsson_data = self.ericsson_data.dropna(
+            subset=['Date']) if not self.ericsson_data.empty else self.ericsson_data
+        self.zte_data = self.zte_data.dropna(subset=['Date']) if not self.zte_data.empty else self.zte_data
+
+        # Get the required 3 dates: latest, second latest, and 7 days before latest
+        self.get_target_dates()
+
+    def get_target_dates(self):
+        """Get the 3 target dates for dashboard"""
+        all_dates = self.df_combined['Date'].dropna().unique()
+        # Fix: Convert to Series and then sort
+        all_dates = pd.Series(pd.to_datetime(all_dates)).sort_values().values
+
+        if len(all_dates) < 2:
+            print("Not enough date data!")
+            return
+
+        # Latest date
+        self.latest_date = pd.to_datetime(all_dates[-1])
+
+        # Second latest date
+        self.second_latest_date = pd.to_datetime(all_dates[-2]) if len(all_dates) > 1 else self.latest_date
+
+        # Date 7 days before latest (find closest available date)
+        target_week_ago = self.latest_date - timedelta(days=7)
+        week_ago_dates = [d for d in all_dates if pd.to_datetime(d) <= target_week_ago]
+        self.week_ago_date = pd.to_datetime(week_ago_dates[-1]) if len(week_ago_dates) > 0 else pd.to_datetime(
+            all_dates[0])
+
+        self.target_dates = [self.latest_date, self.second_latest_date, self.week_ago_date]
+        print(f"Target dates: {[d.strftime('%Y-%m-%d') for d in self.target_dates]}")
+
+    def get_kpi_mapping_ericsson(self):
+        """Map Ericsson KPI columns"""
+        kpi_mapping = {}
+
+        if self.ericsson_data.empty:
+            return kpi_mapping
+
+        columns = self.ericsson_data.columns
+
+        # CS CSSR (%)
+        cs_cssr_cols = [col for col in columns if 'CS CSSR' in col and not 'MultiRAB' in col]
+        if cs_cssr_cols:
+            kpi_mapping['CS CSSR (%)'] = cs_cssr_cols[0]
+
+        # HSDPA CSSR (%)
+        hsdpa_cssr_cols = [col for col in columns if 'PS CSSR_HSDPA' in col or ('HSDPA' in col and 'CSSR' in col)]
+        if hsdpa_cssr_cols:
+            kpi_mapping['HSDPA CSSR (%)'] = hsdpa_cssr_cols[0]
+
+        # CS CDR (%)
+        cs_cdr_cols = [col for col in columns if 'CS CDR' in col and not 'MultiRAB' in col]
+        if cs_cdr_cols:
+            kpi_mapping['CS CDR (%)'] = cs_cdr_cols[0]
+
+        # HSDPA CDR (%)
+        hsdpa_cdr_cols = [col for col in columns if 'PS CDR_HSPDA' in col or 'PS CDR_HSDPA' in col]
+        if hsdpa_cdr_cols:
+            kpi_mapping['HSDPA CDR (%)'] = hsdpa_cdr_cols[0]
+
+        # CS Soft HOSR (%)
+        cs_soft_hosr_cols = [col for col in columns if 'CS Soft HOSR' in col]
+        if cs_soft_hosr_cols:
+            kpi_mapping['CS Soft HOSR (%)'] = cs_soft_hosr_cols[0]
+
+        # PS Soft HOSR (%)
+        ps_soft_hosr_cols = [col for col in columns if 'PS Soft HOSR' in col]
+        if ps_soft_hosr_cols:
+            kpi_mapping['PS Soft HOSR (%)'] = ps_soft_hosr_cols[0]
+
+        # CS Traffic (Erl)
+        cs_traffic_cols = [col for col in columns if 'CS Traffic' in col]
+        if cs_traffic_cols:
+            kpi_mapping['CS Traffic (Erl)'] = cs_traffic_cols[0]
+
+        # PS Traffic (GB)
+        ps_traffic_cols = [col for col in columns if 'PS Traffic' in col]
+        if ps_traffic_cols:
+            kpi_mapping['PS Traffic (GB)'] = ps_traffic_cols[0]
+
+        return kpi_mapping
+
+    def get_kpi_mapping_zte(self):
+        """Map ZTE KPI columns"""
+        kpi_mapping = {}
+
+        if self.zte_data.empty:
+            return kpi_mapping
+
+        columns = self.zte_data.columns
+
+        # CS CSSR (%)
+        cs_cssr_cols = [col for col in columns if 'CS CSSR_VNM' in col]
+        if cs_cssr_cols:
+            kpi_mapping['CS CSSR (%)'] = cs_cssr_cols[0]
+
+        # HSDPA CSSR (%)
+        hsdpa_cssr_cols = [col for col in columns if 'PS CSSR_VNM' in col]
+        if hsdpa_cssr_cols:
+            kpi_mapping['HSDPA CSSR (%)'] = hsdpa_cssr_cols[0]
+
+        # CS CDR (%)
+        cs_cdr_cols = [col for col in columns if 'CS CDR_VNM' in col]
+        if cs_cdr_cols:
+            kpi_mapping['CS CDR (%)'] = cs_cdr_cols[0]
+
+        # HSDPA CDR (%)
+        hsdpa_cdr_cols = [col for col in columns if 'PS CDR_HSDPA_VNM' in col]
+        if hsdpa_cdr_cols:
+            kpi_mapping['HSDPA CDR (%)'] = hsdpa_cdr_cols[0]
+
+        # CS Soft HOSR (%)
+        cs_soft_hosr_cols = [col for col in columns if 'CS Soft HOSR_VNM' in col]
+        if cs_soft_hosr_cols:
+            kpi_mapping['CS Soft HOSR (%)'] = cs_soft_hosr_cols[0]
+
+        # PS Soft HOSR (%)
+        ps_soft_hosr_cols = [col for col in columns if 'PS Soft HOSR_VNM' in col]
+        if ps_soft_hosr_cols:
+            kpi_mapping['PS Soft HOSR (%)'] = ps_soft_hosr_cols[0]
+
+        # CS Traffic (Erl)
+        cs_traffic_cols = [col for col in columns if 'CS Traffic (Erl)_VNM' in col]
+        if cs_traffic_cols:
+            kpi_mapping['CS Traffic (Erl)'] = cs_traffic_cols[0]
+
+        # PS Traffic (GB)
+        ps_traffic_cols = [col for col in columns if 'PS Traffic (GB)' in col and 'VNM' not in col]
+        if ps_traffic_cols:
+            kpi_mapping['PS Traffic (GB)'] = ps_traffic_cols[0]
+
+        return kpi_mapping
+
+    def get_rnc_identifiers_ericsson(self):
+        """Get Ericsson RNC identifiers - filter out unwanted ones"""
+        if self.ericsson_data.empty:
+            return []
+
+        if 'RNC Id' in self.ericsson_data.columns:
+            unique_rncs = self.ericsson_data['RNC Id'].dropna().unique()
+            # Filter out HLTBRE1 and other unwanted RNCs
+            filtered_rncs = []
+            for rnc in unique_rncs:
+                rnc_str = str(rnc).strip()
+                # Skip HLTBRE1 and empty values
+                if rnc_str and rnc_str != 'HLTBRE1' and not pd.isna(rnc):
+                    filtered_rncs.append(rnc_str)
+
+            return sorted(filtered_rncs)
+
+        return []
+
+    def get_rnc_identifiers_zte(self):
+        """Get ZTE RNC identifiers - specifically looking for HNRZ01"""
+        if self.zte_data.empty:
+            return []
+
+        if 'RNC Managed NE Name' in self.zte_data.columns:
+            unique_rncs = self.zte_data['RNC Managed NE Name'].dropna().unique()
+            rnc_list = []
+            for rnc in unique_rncs:
+                if pd.notna(rnc):
+                    rnc_str = str(rnc).strip()
+                    if rnc_str:  # Not empty after strip
+                        rnc_list.append(rnc_str)
+
+            # Prioritize HNRZ01 if it exists
+            if any('HNRZ01' in rnc for rnc in rnc_list):
+                hnrz01_entries = [rnc for rnc in rnc_list if 'HNRZ01' in rnc]
+                return hnrz01_entries[:1]  # Take first HNRZ01 entry
+
+            return rnc_list[:1] if rnc_list else []
+
+        return []
+
+    def extract_kpi_data(self, vendor, kpi_name, column_name, rnc_id):
+        """Extract KPI data for specific vendor, KPI, and RNC"""
+        if vendor == 'Ericsson':
+            data_df = self.ericsson_data
+            rnc_column = 'RNC Id'
+        else:  # ZTE
+            data_df = self.zte_data
+            rnc_column = 'RNC Managed NE Name'
+
+        if data_df.empty or column_name not in data_df.columns:
+            return [np.nan, np.nan, np.nan]
+
+        values = []
+        for target_date in self.target_dates:
+            # Filter data for specific date and RNC
+            try:
+                filtered_data = data_df[
+                    (data_df['Date'].dt.date == target_date.date()) &
+                    (data_df[rnc_column].astype(str).str.contains(str(rnc_id), na=False))
+                    ]
+
+                if not filtered_data.empty and column_name in filtered_data.columns:
+                    # Get the first non-null value
+                    column_data = filtered_data[column_name].dropna()
+                    if not column_data.empty:
+                        value = column_data.iloc[0]
+
+                        # Convert percentage strings to float if needed
+                        if isinstance(value, str):
+                            if '%' in value:
+                                try:
+                                    value = float(value.replace('%', ''))
+                                except:
+                                    value = np.nan
+                            else:
+                                try:
+                                    value = float(value)
+                                except:
+                                    value = np.nan
+
+                        values.append(value)
+                    else:
+                        values.append(np.nan)
+                else:
+                    values.append(np.nan)
+
+            except Exception as e:
+                print(f"Warning: Error extracting data for {kpi_name}, {rnc_id}: {str(e)}")
+                values.append(np.nan)
+
+        return values
+
+    def calculate_delta(self, current_val, previous_val):
+        """Calculate percentage change"""
+        if pd.isna(current_val) or pd.isna(previous_val) or previous_val == 0:
+            return 0
+        return ((current_val - previous_val) / previous_val) * 100
+
+    def get_color_for_delta(self, delta, kpi_name=""):
+        """Get color based on delta value and KPI type"""
+        if abs(delta) < 0.1:  # Minimal change
+            return '#FFFF99'  # Light yellow
+
+        # For CDR (Call Drop Rate), lower is better
+        is_lower_better = 'CDR' in kpi_name
+
+        if is_lower_better:
+            if delta < 0:  # Improvement (decrease in CDR)
+                return '#90EE90'  # Light green
+            else:  # Degradation (increase in CDR)
+                return '#FFB6C1'  # Light red
+        else:
+            if delta > 0:  # Improvement
+                return '#90EE90'  # Light green
+            else:  # Degradation
+                return '#FFB6C1'  # Light red
+
+    def format_delta(self, delta):
+        """Alternative format using more compatible symbols"""
+        if abs(delta) < 0.1:
+            return "- 0%"
+        elif delta > 0:
+            return f"▲ +{delta:.2f}%"  # Triangle up
+        else:
+            return f"▼ {delta:.2f}%"  # Triangle down
+
+    def get_delta_text_color(self, delta, kpi_name=""):
+        """Get text color for delta based on delta value and KPI type"""
+        if abs(delta) < 0.1:  # Minimal change
+            return '#000000'  # Màu đen cho mũi tên ngang
+
+        # For CDR (Call Drop Rate), lower is better
+        is_lower_better = 'CDR' in kpi_name
+
+        if is_lower_better:
+            if delta < 0:  # Improvement (decrease in CDR) - màu xanh lá
+                return '#2E7D32'  # Xanh lá đậm
+            else:  # Degradation (increase in CDR) - màu đỏ
+                return '#C62828'  # Đỏ đậm
+        else:
+            if delta > 0:  # Improvement - màu xanh lá
+                return '#2E7D32'  # Xanh lá đậm
+            else:  # Degradation - màu đỏ
+                return '#C62828'  # Đỏ đậm
+    def create_dashboard(self, title="Daily 3G KPI Dashboard", time_period="BH", save_path=None):
+        """Create the combined dashboard"""
+        if self.df_combined.empty:
+            print("No data to create dashboard!")
+            return
+
+        # Get KPI mappings for both vendors
+        ericsson_kpis = self.get_kpi_mapping_ericsson()
+        zte_kpis = self.get_kpi_mapping_zte()
+
+        # Get RNC identifiers
+        ericsson_rncs = self.get_rnc_identifiers_ericsson()
+        zte_rncs = self.get_rnc_identifiers_zte()
+
+        # Combine all RNCs with ZTE RNC (HNRZ01) at the end
+        all_rncs = ericsson_rncs + zte_rncs
+
+        if not all_rncs:
+            print("No RNC identifiers found!")
+            return
+
+        print(f"Found RNCs: {all_rncs}")
+
+        # Create figure
+        fig, ax = plt.subplots(figsize=(16, 12))
+        ax.axis('off')
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+
+        # Title - positioned higher to avoid overlapping with table
+        fig.suptitle(f'{title} ({time_period})', fontsize=16, fontweight='bold', y=0.98)
+
+        # Get all unique KPIs
+        all_kpis = list(set(list(ericsson_kpis.keys()) + list(zte_kpis.keys())))
+        all_kpis.sort()
+
+        # Create table
+        self.create_combined_table(ax, all_kpis, all_rncs, ericsson_kpis, zte_kpis, ericsson_rncs, zte_rncs)
+
+        plt.tight_layout()
+        plt.subplots_adjust(top=0.94)  # Leave more space for title
+
+        # Save as PNG if path provided
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight', facecolor='white', pad_inches=0.5)
+            print(f"Dashboard saved to: {save_path}")
+
+        plt.show()
+        return fig
+
+    def create_combined_table(self, ax, all_kpis, all_rncs, ericsson_kpis, zte_kpis, ericsson_rncs, zte_rncs):
+        """Create the combined table with data from both vendors"""
+        rows = len(all_kpis) * 5 + 1  # 5 rows per KPI (3 dates + 2 deltas) + header
+        cols = len(all_rncs) + 2  # RNCs + Item + KPI columns
+
+        cell_width = 1.0 / cols
+        # Adjust cell height to fit within available space (below title)
+        available_height = 0.85  # Leave space for title at top
+        cell_height = available_height / rows
+
+        # Create header
+        self.create_header(ax, all_rncs, cell_width, cell_height)
+
+        # Create data rows for each KPI
+        row_idx = 1
+        for kpi_name in all_kpis:
+            self.create_kpi_section_with_dates(ax, kpi_name, all_rncs, ericsson_kpis, zte_kpis,
+                                               ericsson_rncs, zte_rncs, row_idx, cell_width, cell_height)
+            row_idx += 5  # 5 rows per KPI
+
+    def create_header(self, ax, all_rncs, cell_width, cell_height):
+        """Create header row"""
+        # Position header at the very top of available space
+        y = 0.85 - cell_height  # Start from top and go down by cell_height
+
+        # Item column
+        rect = patches.Rectangle((0, y), cell_width, cell_height,
+                                 linewidth=1, edgecolor='black', facecolor='orange')
+        ax.add_patch(rect)
+        ax.text(cell_width / 2, y + cell_height / 2, 'Item', ha='center', va='center', fontweight='bold')
+
+        # RNC columns
+        for i, rnc in enumerate(all_rncs):
+            x = (i + 1) * cell_width
+            rect = patches.Rectangle((x, y), cell_width, cell_height,
+                                     linewidth=1, edgecolor='black', facecolor='orange')
+            ax.add_patch(rect)
+            # Clean RNC name - remove extra spaces and format properly
+            clean_rnc = str(rnc).strip()
+            if '(' in clean_rnc:
+                # Extract main RNC name if there's additional info in parentheses
+                clean_rnc = clean_rnc.split('(')[0].strip()
+            ax.text(x + cell_width / 2, y + cell_height / 2, clean_rnc, ha='center', va='center', fontweight='bold',
+                    fontsize=10)
+
+        # KPI column
+        x = (len(all_rncs) + 1) * cell_width
+        rect = patches.Rectangle((x, y), cell_width, cell_height,
+                                 linewidth=1, edgecolor='black', facecolor='orange')
+        ax.add_patch(rect)
+        ax.text(x + cell_width / 2, y + cell_height / 2, 'KPI', ha='center', va='center', fontweight='bold')
+
+    def create_kpi_section_with_dates(self, ax, kpi_name, all_rncs, ericsson_kpis, zte_kpis,
+                                      ericsson_rncs, zte_rncs, start_row, cell_width, cell_height):
+        """Create 5 rows for a KPI (3 dates + 2 deltas) with merged KPI cell"""
+
+        # Collect data for all RNCs for all 3 dates
+        date_data = []  # Will store [latest_values, second_values, week_values]
+
+        for date_idx in range(3):  # 3 target dates
+            values_for_date = []
+            for rnc in all_rncs:
+                # Determine vendor and get data
+                if rnc in ericsson_rncs and kpi_name in ericsson_kpis:
+                    all_values = self.extract_kpi_data('Ericsson', kpi_name, ericsson_kpis[kpi_name], rnc)
+                elif rnc in zte_rncs and kpi_name in zte_kpis:
+                    all_values = self.extract_kpi_data('ZTE', kpi_name, zte_kpis[kpi_name], rnc)
+                else:
+                    all_values = [np.nan, np.nan, np.nan]
+
+                values_for_date.append(all_values[date_idx])
+
+            date_data.append(values_for_date)
+
+        latest_values, second_values, week_values = date_data
+
+        # Calculate deltas
+        delta_d1_values = [self.calculate_delta(latest_values[i], second_values[i]) for i in range(len(latest_values))]
+        delta_d7_values = [self.calculate_delta(latest_values[i], week_values[i]) for i in range(len(latest_values))]
+
+        # Use consistent header position
+        header_y = 0.85  # Same as header position
+
+        # Create merged KPI cell first (spans 5 rows)
+        kpi_x = (len(all_rncs) + 1) * cell_width
+        kpi_y = header_y - (start_row + 5) * cell_height  # Bottom of the group
+        kpi_height = 5 * cell_height  # Spans 5 rows
+
+        rect = patches.Rectangle((kpi_x, kpi_y), cell_width, kpi_height,
+                                 linewidth=1, edgecolor='black', facecolor='lightblue')
+        ax.add_patch(rect)
+        ax.text(kpi_x + cell_width / 2, kpi_y + kpi_height / 2, kpi_name,
+                ha='center', va='center', fontsize=10, fontweight='bold', rotation=0)
+
+        # Create rows for each date + deltas (without KPI column)
+        # Row 1: Latest date
+        y = header_y - (start_row + 1) * cell_height
+        self.create_data_row_simple(ax, self.latest_date.strftime('%d-%b-%y'), latest_values,
+                                    kpi_name, all_rncs, cell_width, cell_height, y, 'current')
+
+        # Row 2: Second latest date
+        y = header_y - (start_row + 2) * cell_height
+        self.create_data_row_simple(ax, self.second_latest_date.strftime('%d-%b-%y'), second_values,
+                                    kpi_name, all_rncs, cell_width, cell_height, y, 'current')
+
+        # Row 3: Week ago date
+        y = header_y - (start_row + 3) * cell_height
+        self.create_data_row_simple(ax, self.week_ago_date.strftime('%d-%b-%y'), week_values,
+                                    kpi_name, all_rncs, cell_width, cell_height, y, 'current')
+
+        # Row 4: Delta D-1
+        y = header_y - (start_row + 4) * cell_height
+        self.create_data_row_simple(ax, 'Delta (D-1)', delta_d1_values,
+                                    kpi_name, all_rncs, cell_width, cell_height, y, 'delta')
+
+        # Row 5: Delta D-7
+        y = header_y - (start_row + 5) * cell_height
+        self.create_data_row_simple(ax, 'Delta (D-7)', delta_d7_values,
+                                    kpi_name, all_rncs, cell_width, cell_height, y, 'delta')
+
+    def create_data_row_simple(self, ax, row_label, data_values, kpi_name, all_rncs,
+                               cell_width, cell_height, y, row_type):
+        """Create a single data row with improved delta styling"""
+
+        # Row label với light gray background
+        clean_label = str(row_label).strip()
+        rect = patches.Rectangle((0, y), cell_width, cell_height,
+                                 linewidth=1, edgecolor='black', facecolor='#F5F5F5')
+        ax.add_patch(rect)
+        ax.text(cell_width / 2, y + cell_height / 2, clean_label, ha='center', va='center',
+                fontsize=10, color='black', fontweight='normal', fontfamily='Arial')
+
+        # Data cells
+        for i, value in enumerate(data_values):
+            x = (i + 1) * cell_width
+
+            if row_type == 'delta':
+                bg_color = self.get_color_for_delta(value, kpi_name)
+                text_color = self.get_delta_text_color(value, kpi_name)
+                display_text = self.format_delta(value)
+                font_weight = 'bold'  # Font chữ nét đậm cho delta
+            else:
+                bg_color = '#FFFFFF'  # White background for data cells
+                text_color = 'black'
+                font_weight = 'normal'
+
+                if pd.isna(value):
+                    display_text = "N/A"
+                elif 'CDR' in kpi_name:
+                    display_text = f"{value:.2f}"
+                elif 'Traffic' in kpi_name:
+                    if 'CS' in kpi_name:
+                        display_text = f"{value:.2f}"
+                    else:
+                        display_text = f"{value:.0f}"
+                else:
+                    display_text = f"{value:.2f}"
+
+            # Clean display text
+            display_text = str(display_text).strip()
+
+            rect = patches.Rectangle((x, y), cell_width, cell_height,
+                                     linewidth=1, edgecolor='black', facecolor=bg_color)
+            ax.add_patch(rect)
+            ax.text(x + cell_width / 2, y + cell_height / 2, display_text,
+                    ha='center', va='center', fontsize=10, color=text_color,
+                    fontweight=font_weight, fontfamily='Arial')
+
+    def create_data_row_with_kpi(self, ax, row_label, data_values, kpi_name, all_rncs,
+                                 cell_width, cell_height, y, row_type, show_kpi=False):
+        """Create a single data row with merged KPI column"""
+
+        # Row label
+        rect = patches.Rectangle((0, y), cell_width, cell_height,
+                                 linewidth=1, edgecolor='black', facecolor='lightgray')
+        ax.add_patch(rect)
+        ax.text(cell_width / 2, y + cell_height / 2, row_label, ha='center', va='center', fontsize=9)
+
+        # Data cells
+        for i, value in enumerate(data_values):
+            x = (i + 1) * cell_width
+
+            if row_type == 'delta':
+                color = self.get_color_for_delta(value, kpi_name)
+                display_text = self.format_delta(value)
+            else:
+                color = 'white'
+                if pd.isna(value):
+                    display_text = "N/A"
+                elif 'CDR' in kpi_name:
+                    display_text = f"{value:.2f}"
+                elif 'Traffic' in kpi_name:
+                    if 'CS' in kpi_name:
+                        display_text = f"{value:.2f}"
+                    else:
+                        display_text = f"{value:.0f}"
+                else:
+                    display_text = f"{value:.2f}"
+
+            rect = patches.Rectangle((x, y), cell_width, cell_height,
+                                     linewidth=1, edgecolor='black', facecolor=color)
+            ax.add_patch(rect)
+            ax.text(x + cell_width / 2, y + cell_height / 2, display_text,
+                    ha='center', va='center', fontsize=8)
+
+        # KPI name cell - only show for the first row of each KPI group
+        x = (len(all_rncs) + 1) * cell_width
+        if show_kpi:
+            color = 'lightblue'
+            text = kpi_name
+            fontweight = 'bold'
+        else:
+            color = 'lightgray'
+            text = ""
+            fontweight = 'normal'
+
+        rect = patches.Rectangle((x, y), cell_width, cell_height,
+                                 linewidth=1, edgecolor='black', facecolor=color)
+        ax.add_patch(rect)
+        if text:
+            ax.text(x + cell_width / 2, y + cell_height / 2, text,
+                    ha='center', va='center', fontsize=9, fontweight=fontweight)
+
+
+# Main functions for easy usage
+def create_dashboard_from_folder(folder_path, title="Daily 3G KPI Dashboard", time_period="BH", save_png=True):
+    """Create dashboard from all CSV files in a folder"""
+    try:
+        dashboard = Enhanced3GDashboard(csv_folder_path=folder_path)
+
+        save_path = None
+        if save_png:
+            save_path = os.path.join(folder_path,
+                                     f"3G_KPI_Dashboard_{time_period}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+
+        fig = dashboard.create_dashboard(title=title, time_period=time_period, save_path=save_path)
+        return fig
+
+    except Exception as e:
+        print(f"Error creating dashboard: {str(e)}")
+        return None
+
+
+def create_dashboard_from_files(csv_files_list, title="Daily 3G KPI Dashboard", time_period="BH", save_png=True,
+                                output_dir="."):
+    """Create dashboard from list of CSV files"""
+    try:
+        dashboard = Enhanced3GDashboard(csv_files_list=csv_files_list)
+
+        save_path = None
+        if save_png:
+            save_path = os.path.join(output_dir,
+                                     f"3G_KPI_Dashboard_{time_period}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+
+        fig = dashboard.create_dashboard(title=title, time_period=time_period, save_path=save_path)
+        return fig
+
+    except Exception as e:
+        print(f"Error creating dashboard: {str(e)}")
+        return None
+
+
+# Example usage
+if __name__ == "__main__":
+    # Method 1: Load from folder
+    # folder_path = "path/to/your/csv/folder"
+    # create_dashboard_from_folder(folder_path, "Daily 3G KPI Dashboard", "BH", save_png=True)
+
+    # Method 2: Load specific files
+    csv_files = [
+        "3G_RNO_KPIs_BH_scheduled2025-08-06.csv",
+        "3G_RNO_KPIs_BH_ZTE_2025-08-06.csv",
+        "3G_RNO_KPIs_WD_scheduled2025-08-06.csv",
+        "3G_RNO_KPIs_WD_ZTE_2025-08-06.csv"
+    ]
+
+    # Create BH dashboard
+    create_dashboard_from_files([f for f in csv_files if 'BH' in f],
+                                "Daily 3G KPI Dashboard by RNC", "BH", save_png=True)
+
+    # Create WD (24h) dashboard
+    create_dashboard_from_files([f for f in csv_files if 'WD' in f],
+                                "Daily 3G KPI Dashboard by RNC", "24h", save_png=True)
