@@ -323,11 +323,17 @@ class Enhanced3GDashboard:
 
         return values
 
-    def calculate_delta(self, current_val, previous_val):
+    def calculate_delta(self, current_val, previous_val, kpi_list):
         """Calculate percentage change"""
         if pd.isna(current_val) or pd.isna(previous_val) or previous_val == 0:
-            return 0
-        return ((current_val - previous_val) / previous_val) * 100
+            diff = 0
+        for kpi_name in kpi_list:
+            if kpi_name in ['CS CDR (%)', 'HSDPA CDR (%)']:
+                # For CDR, lower is better, so reverse the calculation
+                diff = ((previous_val - current_val) / previous_val) * 100
+            else:
+                diff = ((current_val - previous_val) / previous_val) * 100
+        return diff
 
     def get_color_for_delta(self, delta, kpi_name=""):
         """Get color based on delta value and KPI type"""

@@ -773,7 +773,7 @@ class ExcelCSVProcessorFor3G:
                         else:
                             diff = curr_val - prev_val
 
-                        symbol = '↑' if diff > 0.5 else ('↓' if diff < -0.5 else '→')
+                        symbol = '▲' if diff > 0.5 else ('▼' if diff < -0.5 else '▶')
                         comp_row.append(f"{diff:+.1f}% {symbol}")
                     else:
                         comp_row.append('-')
@@ -1166,10 +1166,10 @@ class ExcelCSVProcessorFor3G:
         # Comparison row
         elif 'Delta' in str(row[0]):
             bg_color = '#E6E6FA'
-            if '↑' in str(cell_value):
+            if '▲' in str(cell_value):
                 text_color = 'green'
                 font_weight = 'bold'
-            elif '↓' in str(cell_value):
+            elif '▼' in str(cell_value):
                 text_color = 'red'
                 font_weight = 'bold'
         # Data rows with target checking
@@ -1251,18 +1251,18 @@ class ExcelCSVProcessorFor3G:
 
                         if value_str.startswith('+'):
                             if abs(val_float) <= 1:
-                                display_value = f"{value} →"
+                                display_value = f"{value} ▶"
                                 text_color = 'black'
                             else:
-                                display_value = f"{value} ↑"
+                                display_value = f"{value} ▲"
                                 text_color = 'green'
                             font_weight = 'bold'
                         elif value_str.startswith('-'):
                             if abs(val_float) <= 1:
-                                display_value = f"{value} →"
+                                display_value = f"{value} ▶"
                                 text_color = 'black'
                             else:
-                                display_value = f"{value} ↓"
+                                display_value = f"{value} ▼"
                                 text_color = 'red'
                             font_weight = 'bold'
                 except:
