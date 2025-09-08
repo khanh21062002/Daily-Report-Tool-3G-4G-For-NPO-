@@ -1558,3 +1558,64 @@ if __name__ == "__main__":
 
     print("\n")
     main()
+
+
+class ExcelCSVProcessor:
+    """
+    Wrapper class để tương thích với DailyReport.py
+    Đây là alias cho VoLTEKPIProcessor để đảm bảo tương thích
+    """
+
+    def __init__(self):
+        self.volte_processor = VoLTEKPIProcessor()
+
+    def clean_excel_to_csv(self, excel_path, csv_path, sheet_name=0):
+        """Wrapper method cho VoLTE processing"""
+        try:
+            # Đọc và xử lý file Excel VoLTE
+            dataframes = self.volte_processor.read_excel_file(excel_path)
+            if not dataframes:
+                return None
+
+            # Xử lý dữ liệu
+            cleaned_dataframes = {}
+            for sheet_name, df in dataframes.items():
+                cleaned_df = self.volte_processor.clean_dataframe_enhanced(df, sheet_name)
+                if cleaned_df is not None and not cleaned_df.empty:
+                    cleaned_dataframes[sheet_name] = cleaned_df
+
+            if not cleaned_dataframes:
+                return None
+
+            # Lưu CSV đầu tiên
+            first_df = list(cleaned_dataframes.values())[0]
+            first_df.to_csv(csv_path, index=False, encoding='utf-8')
+
+            return first_df
+
+        except Exception as e:
+            print(f"Lỗi xử lý VoLTE file: {e}")
+            return None
+
+    def create_charts_from_csv(self, csv_all_day, csv_busy_hour, output_dir):
+        """Wrapper method để tạo charts VoLTE"""
+        try:
+            # Thực hiện quy trình hoàn chỉnh VoLTE
+            excel_path = getattr(self, 'current_excel_path', None)
+            if excel_path:
+                success = self.volte_processor.process_complete_workflow(excel_path, output_dir)
+                if success:
+                    return ["VoLTE_charts_created"]
+            return []
+        except Exception as e:
+            print(f"Lỗi tạo charts VoLTE: {e}")
+            return []
+
+    def create_summary_table(self, csv_all_day, csv_busy_hour, output_dir):
+        """Wrapper method cho summary table VoLTE"""
+        # VoLTE processor tự động tạo summary trong quy trình chính
+        pass
+
+    def set_excel_path(self, excel_path):
+        """Set đường dẫn Excel để sử dụng trong processing"""
+        self.current_excel_path = excel_path

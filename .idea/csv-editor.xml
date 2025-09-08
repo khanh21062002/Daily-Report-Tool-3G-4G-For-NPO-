@@ -31,6 +31,13 @@
             </Attribute>
           </value>
         </entry>
+        <entry key="\output_miền_trung\4G_KPI Cell FDD Data_BH_scheduled_clean.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
       </map>
     </option>
   </component>

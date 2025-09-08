@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Ứng dụng báo cáo hàng ngày</string>
+   <string>Ứng dụng báo cáo hàng ngày - Multi Files</string>
   </property>
   <widget class="QWidget" name="centralwidget">
    <layout class="QHBoxLayout" name="mainLayout">
@@ -112,6 +112,7 @@
       <property name="currentIndex">
        <number>0</number>
       </property>
+      <!-- TRANG MIỀN BẮC -->
       <widget class="QWidget" name="pageBac">
        <layout class="QVBoxLayout" name="layoutBac">
         <property name="spacing">
@@ -121,13 +122,13 @@
          <number>40</number>
         </property>
         <property name="topMargin">
-         <number>40</number>
+         <number>30</number>
         </property>
         <property name="rightMargin">
          <number>40</number>
         </property>
         <property name="bottomMargin">
-         <number>40</number>
+         <number>30</number>
         </property>
         <item>
          <widget class="QLabel" name="lblTitleBac">
@@ -147,7 +148,7 @@
           <property name="sizeHint" stdset="0">
            <size>
             <width>20</width>
-            <height>40</height>
+            <height>20</height>
            </size>
           </property>
          </spacer>
@@ -171,8 +172,8 @@
            <widget class="QWidget" name="formWidgetBac" native="true">
             <property name="minimumSize">
              <size>
-              <width>600</width>
-              <height>200</height>
+              <width>750</width>
+              <height>450</height>
              </size>
             </property>
             <layout class="QGridLayout" name="gridLayoutBac">
@@ -189,18 +190,24 @@
               <number>30</number>
              </property>
              <property name="verticalSpacing">
-              <number>20</number>
+              <number>15</number>
              </property>
              <property name="horizontalSpacing">
               <number>15</number>
              </property>
              <item row="0" column="0">
               <widget class="QLabel" name="lblNameBac">
+               <property name="minimumSize">
+                <size>
+                 <width>120</width>
+                 <height>40</height>
+                </size>
+               </property>
                <property name="text">
                 <string>Loại báo cáo:</string>
                </property>
                <property name="alignment">
-                <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+                <set>Qt::AlignRight|Qt::AlignVCenter</set>
                </property>
               </widget>
              </item>
@@ -208,19 +215,27 @@
               <widget class="QComboBox" name="lineEditNameBac">
                <property name="minimumSize">
                 <size>
-                 <width>350</width>
+                 <width>400</width>
                  <height>40</height>
                 </size>
                </property>
-               <item><property name="text"><string>3G</string></property></item><item><property name="text"><string>4G</string></property></item></widget>
+               <item><property name="text"><string>3G</string></property></item>
+               <item><property name="text"><string>4G</string></property></item>
+              </widget>
              </item>
              <item row="1" column="0">
               <widget class="QLabel" name="lblCreatorBac">
+               <property name="minimumSize">
+                <size>
+                 <width>120</width>
+                 <height>40</height>
+                </size>
+               </property>
                <property name="text">
                 <string>Người tạo:</string>
                </property>
                <property name="alignment">
-                <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+                <set>Qt::AlignRight|Qt::AlignVCenter</set>
                </property>
               </widget>
              </item>
@@ -228,7 +243,7 @@
               <widget class="QLineEdit" name="lineEditCreatorBac">
                <property name="minimumSize">
                 <size>
-                 <width>350</width>
+                 <width>400</width>
                  <height>40</height>
                 </size>
                </property>
@@ -239,43 +254,133 @@
              </item>
              <item row="2" column="0">
               <widget class="QLabel" name="lblImportBac">
+               <property name="minimumSize">
+                <size>
+                 <width>120</width>
+                 <height>40</height>
+                </size>
+               </property>
                <property name="text">
-                <string>Import file:</string>
+                <string>Quản lý files:</string>
                </property>
                <property name="alignment">
-                <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+                <set>Qt::AlignRight|Qt::AlignTop</set>
                </property>
               </widget>
              </item>
              <item row="2" column="1">
-              <layout class="QHBoxLayout" name="fileBac">
+              <layout class="QVBoxLayout" name="filesBac">
                <property name="spacing">
-                <number>15</number>
+                <number>10</number>
                </property>
                <item>
-                <widget class="QPushButton" name="btnFileBac">
-                 <property name="minimumSize">
-                  <size>
-                   <width>120</width>
-                   <height>40</height>
-                  </size>
+                <layout class="QHBoxLayout" name="fileButtonsBac">
+                 <property name="spacing">
+                  <number>10</number>
                  </property>
-                 <property name="text">
-                  <string>Chọn file</string>
-                 </property>
-                </widget>
+                 <item>
+                  <widget class="QPushButton" name="btnAddFileBac">
+                   <property name="minimumSize">
+                    <size>
+                     <width>130</width>
+                     <height>35</height>
+                    </size>
+                   </property>
+                   <property name="text">
+                    <string>Thêm file</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QPushButton" name="btnClearFilesBac">
+                   <property name="minimumSize">
+                    <size>
+                     <width>130</width>
+                     <height>35</height>
+                    </size>
+                   </property>
+                   <property name="text">
+                    <string>Xóa tất cả</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <spacer name="buttonSpacerBac">
+                   <property name="orientation">
+                    <enum>Qt::Horizontal</enum>
+                   </property>
+                   <property name="sizeHint" stdset="0">
+                    <size>
+                     <width>40</width>
+                     <height>20</height>
+                    </size>
+                   </property>
+                  </spacer>
+                 </item>
+                </layout>
                </item>
                <item>
-                <widget class="QLabel" name="lblFileBac">
+                <widget class="QScrollArea" name="scrollFilesBac">
                  <property name="minimumSize">
                   <size>
-                   <width>220</width>
-                   <height>40</height>
+                   <width>450</width>
+                   <height>180</height>
                   </size>
                  </property>
-                 <property name="text">
-                  <string>Chưa chọn file</string>
+                 <property name="widgetResizable">
+                  <bool>true</bool>
                  </property>
+                 <widget class="QWidget" name="scrollAreaWidgetBac">
+                  <property name="geometry">
+                   <rect>
+                    <x>0</x>
+                    <y>0</y>
+                    <width>448</width>
+                    <height>178</height>
+                   </rect>
+                  </property>
+                  <layout class="QVBoxLayout" name="fileListBac">
+                   <property name="spacing">
+                    <number>5</number>
+                   </property>
+                   <property name="leftMargin">
+                    <number>10</number>
+                   </property>
+                   <property name="topMargin">
+                    <number>10</number>
+                   </property>
+                   <property name="rightMargin">
+                    <number>10</number>
+                   </property>
+                   <property name="bottomMargin">
+                    <number>10</number>
+                   </property>
+                   <item>
+                    <widget class="QLabel" name="lblEmptyBac">
+                     <property name="text">
+                      <string>Chưa có file nào được chọn
+Click "Thêm file" để bắt đầu</string>
+                     </property>
+                     <property name="alignment">
+                      <set>Qt::AlignCenter</set>
+                     </property>
+                    </widget>
+                   </item>
+                   <item>
+                    <spacer name="fileListSpacerBac">
+                     <property name="orientation">
+                      <enum>Qt::Vertical</enum>
+                     </property>
+                     <property name="sizeHint" stdset="0">
+                      <size>
+                       <width>20</width>
+                       <height>40</height>
+                      </size>
+                     </property>
+                    </spacer>
+                   </item>
+                  </layout>
+                 </widget>
                 </widget>
                </item>
               </layout>
@@ -306,7 +411,7 @@
           <property name="sizeHint" stdset="0">
            <size>
             <width>20</width>
-            <height>30</height>
+            <height>20</height>
            </size>
           </property>
          </spacer>
@@ -362,13 +467,15 @@
           <property name="sizeHint" stdset="0">
            <size>
             <width>20</width>
-            <height>40</height>
+            <height>20</height>
            </size>
           </property>
          </spacer>
         </item>
        </layout>
       </widget>
+
+      <!-- TRANG MIỀN TRUNG -->
       <widget class="QWidget" name="pageTrung">
        <layout class="QVBoxLayout" name="layoutTrung">
         <property name="spacing">
@@ -378,13 +485,13 @@
          <number>40</number>
         </property>
         <property name="topMargin">
-         <number>40</number>
+         <number>30</number>
         </property>
         <property name="rightMargin">
          <number>40</number>
         </property>
         <property name="bottomMargin">
-         <number>40</number>
+         <number>30</number>
         </property>
         <item>
          <widget class="QLabel" name="lblTitleTrung">
@@ -404,7 +511,7 @@
           <property name="sizeHint" stdset="0">
            <size>
             <width>20</width>
-            <height>40</height>
+            <height>20</height>
            </size>
           </property>
          </spacer>
@@ -428,8 +535,8 @@
            <widget class="QWidget" name="formWidgetTrung" native="true">
             <property name="minimumSize">
              <size>
-              <width>600</width>
-              <height>200</height>
+              <width>750</width>
+              <height>450</height>
              </size>
             </property>
             <layout class="QGridLayout" name="gridLayoutTrung">
@@ -446,18 +553,24 @@
               <number>30</number>
              </property>
              <property name="verticalSpacing">
-              <number>20</number>
+              <number>15</number>
              </property>
              <property name="horizontalSpacing">
               <number>15</number>
              </property>
              <item row="0" column="0">
               <widget class="QLabel" name="lblNameTrung">
+               <property name="minimumSize">
+                <size>
+                 <width>120</width>
+                 <height>40</height>
+                </size>
+               </property>
                <property name="text">
                 <string>Loại báo cáo:</string>
                </property>
                <property name="alignment">
-                <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+                <set>Qt::AlignRight|Qt::AlignVCenter</set>
                </property>
               </widget>
              </item>
@@ -465,19 +578,27 @@
               <widget class="QComboBox" name="lineEditNameTrung">
                <property name="minimumSize">
                 <size>
-                 <width>350</width>
+                 <width>400</width>
                  <height>40</height>
                 </size>
                </property>
-               <item><property name="text"><string>3G</string></property></item><item><property name="text"><string>4G</string></property></item></widget>
+               <item><property name="text"><string>3G</string></property></item>
+               <item><property name="text"><string>4G</string></property></item>
+              </widget>
              </item>
              <item row="1" column="0">
               <widget class="QLabel" name="lblCreatorTrung">
+               <property name="minimumSize">
+                <size>
+                 <width>120</width>
+                 <height>40</height>
+                </size>
+               </property>
                <property name="text">
                 <string>Người tạo:</string>
                </property>
                <property name="alignment">
-                <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+                <set>Qt::AlignRight|Qt::AlignVCenter</set>
                </property>
               </widget>
              </item>
@@ -485,7 +606,7 @@
               <widget class="QLineEdit" name="lineEditCreatorTrung">
                <property name="minimumSize">
                 <size>
-                 <width>350</width>
+                 <width>400</width>
                  <height>40</height>
                 </size>
                </property>
@@ -496,43 +617,133 @@
              </item>
              <item row="2" column="0">
               <widget class="QLabel" name="lblImportTrung">
+               <property name="minimumSize">
+                <size>
+                 <width>120</width>
+                 <height>40</height>
+                </size>
+               </property>
                <property name="text">
-                <string>Import file:</string>
+                <string>Quản lý files:</string>
                </property>
                <property name="alignment">
-                <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+                <set>Qt::AlignRight|Qt::AlignTop</set>
                </property>
               </widget>
              </item>
              <item row="2" column="1">
-              <layout class="QHBoxLayout" name="fileTrung">
+              <layout class="QVBoxLayout" name="filesTrung">
                <property name="spacing">
-                <number>15</number>
+                <number>10</number>
                </property>
                <item>
-                <widget class="QPushButton" name="btnFileTrung">
-                 <property name="minimumSize">
-                  <size>
-                   <width>120</width>
-                   <height>40</height>
-                  </size>
+                <layout class="QHBoxLayout" name="fileButtonsTrung">
+                 <property name="spacing">
+                  <number>10</number>
                  </property>
-                 <property name="text">
-                  <string>Chọn file</string>
-                 </property>
-                </widget>
+                 <item>
+                  <widget class="QPushButton" name="btnAddFileTrung">
+                   <property name="minimumSize">
+                    <size>
+                     <width>130</width>
+                     <height>35</height>
+                    </size>
+                   </property>
+                   <property name="text">
+                    <string>Thêm file</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QPushButton" name="btnClearFilesTrung">
+                   <property name="minimumSize">
+                    <size>
+                     <width>130</width>
+                     <height>35</height>
+                    </size>
+                   </property>
+                   <property name="text">
+                    <string>Xóa tất cả</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <spacer name="buttonSpacerTrung">
+                   <property name="orientation">
+                    <enum>Qt::Horizontal</enum>
+                   </property>
+                   <property name="sizeHint" stdset="0">
+                    <size>
+                     <width>40</width>
+                     <height>20</height>
+                    </size>
+                   </property>
+                  </spacer>
+                 </item>
+                </layout>
                </item>
                <item>
-                <widget class="QLabel" name="lblFileTrung">
+                <widget class="QScrollArea" name="scrollFilesTrung">
                  <property name="minimumSize">
                   <size>
-                   <width>220</width>
-                   <height>40</height>
+                   <width>450</width>
+                   <height>180</height>
                   </size>
                  </property>
-                 <property name="text">
-                  <string>Chưa chọn file</string>
+                 <property name="widgetResizable">
+                  <bool>true</bool>
                  </property>
+                 <widget class="QWidget" name="scrollAreaWidgetTrung">
+                  <property name="geometry">
+                   <rect>
+                    <x>0</x>
+                    <y>0</y>
+                    <width>448</width>
+                    <height>178</height>
+                   </rect>
+                  </property>
+                  <layout class="QVBoxLayout" name="fileListTrung">
+                   <property name="spacing">
+                    <number>5</number>
+                   </property>
+                   <property name="leftMargin">
+                    <number>10</number>
+                   </property>
+                   <property name="topMargin">
+                    <number>10</number>
+                   </property>
+                   <property name="rightMargin">
+                    <number>10</number>
+                   </property>
+                   <property name="bottomMargin">
+                    <number>10</number>
+                   </property>
+                   <item>
+                    <widget class="QLabel" name="lblEmptyTrung">
+                     <property name="text">
+                      <string>Chưa có file nào được chọn
+Click "Thêm file" để bắt đầu</string>
+                     </property>
+                     <property name="alignment">
+                      <set>Qt::AlignCenter</set>
+                     </property>
+                    </widget>
+                   </item>
+                   <item>
+                    <spacer name="fileListSpacerTrung">
+                     <property name="orientation">
+                      <enum>Qt::Vertical</enum>
+                     </property>
+                     <property name="sizeHint" stdset="0">
+                      <size>
+                       <width>20</width>
+                       <height>40</height>
+                      </size>
+                     </property>
+                    </spacer>
+                   </item>
+                  </layout>
+                 </widget>
                 </widget>
                </item>
               </layout>
@@ -563,7 +774,7 @@
           <property name="sizeHint" stdset="0">
            <size>
             <width>20</width>
-            <height>30</height>
+            <height>20</height>
            </size>
           </property>
          </spacer>
@@ -619,13 +830,15 @@
           <property name="sizeHint" stdset="0">
            <size>
             <width>20</width>
-            <height>40</height>
+            <height>20</height>
            </size>
           </property>
          </spacer>
         </item>
        </layout>
       </widget>
+
+      <!-- TRANG MIỀN NAM -->
       <widget class="QWidget" name="pageNam">
        <layout class="QVBoxLayout" name="layoutNam">
         <property name="spacing">
@@ -635,13 +848,13 @@
          <number>40</number>
         </property>
         <property name="topMargin">
-         <number>40</number>
+         <number>30</number>
         </property>
         <property name="rightMargin">
          <number>40</number>
         </property>
         <property name="bottomMargin">
-         <number>40</number>
+         <number>30</number>
         </property>
         <item>
          <widget class="QLabel" name="lblTitleNam">
@@ -661,7 +874,7 @@
           <property name="sizeHint" stdset="0">
            <size>
             <width>20</width>
-            <height>40</height>
+            <height>20</height>
            </size>
           </property>
          </spacer>
@@ -685,8 +898,8 @@
            <widget class="QWidget" name="formWidgetNam" native="true">
             <property name="minimumSize">
              <size>
-              <width>600</width>
-              <height>200</height>
+              <width>750</width>
+              <height>450</height>
              </size>
             </property>
             <layout class="QGridLayout" name="gridLayoutNam">
@@ -702,11 +915,11 @@
              <property name="bottomMargin">
               <number>30</number>
              </property>
-             <property name="horizontalSpacing">
+             <property name="verticalSpacing">
               <number>15</number>
              </property>
-             <property name="verticalSpacing">
-              <number>20</number>
+             <property name="horizontalSpacing">
+              <number>15</number>
              </property>
              <item row="0" column="0">
               <widget class="QLabel" name="lblNameNam">
@@ -720,7 +933,7 @@
                 <string>Loại báo cáo:</string>
                </property>
                <property name="alignment">
-                <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+                <set>Qt::AlignRight|Qt::AlignVCenter</set>
                </property>
               </widget>
              </item>
@@ -728,11 +941,13 @@
               <widget class="QComboBox" name="lineEditNameNam">
                <property name="minimumSize">
                 <size>
-                 <width>350</width>
+                 <width>400</width>
                  <height>40</height>
                 </size>
                </property>
-               <item><property name="text"><string>3G</string></property></item><item><property name="text"><string>4G</string></property></item></widget>
+               <item><property name="text"><string>3G</string></property></item>
+               <item><property name="text"><string>4G</string></property></item>
+              </widget>
              </item>
              <item row="1" column="0">
               <widget class="QLabel" name="lblCreatorNam">
@@ -746,7 +961,7 @@
                 <string>Người tạo:</string>
                </property>
                <property name="alignment">
-                <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+                <set>Qt::AlignRight|Qt::AlignVCenter</set>
                </property>
               </widget>
              </item>
@@ -754,7 +969,7 @@
               <widget class="QLineEdit" name="lineEditCreatorNam">
                <property name="minimumSize">
                 <size>
-                 <width>350</width>
+                 <width>400</width>
                  <height>40</height>
                 </size>
                </property>
@@ -772,42 +987,126 @@
                 </size>
                </property>
                <property name="text">
-                <string>Import file:</string>
+                <string>Quản lý files:</string>
                </property>
                <property name="alignment">
-                <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+                <set>Qt::AlignRight|Qt::AlignTop</set>
                </property>
               </widget>
              </item>
              <item row="2" column="1">
-              <layout class="QHBoxLayout" name="fileNam">
+              <layout class="QVBoxLayout" name="filesNam">
                <property name="spacing">
-                <number>15</number>
+                <number>10</number>
                </property>
                <item>
-                <widget class="QPushButton" name="btnFileNam">
-                 <property name="minimumSize">
-                  <size>
-                   <width>120</width>
-                   <height>40</height>
-                  </size>
+                <layout class="QHBoxLayout" name="fileButtonsNam">
+                 <property name="spacing">
+                  <number>10</number>
                  </property>
-                 <property name="text">
-                  <string>Chọn file</string>
-                 </property>
-                </widget>
+                 <item>
+                  <widget class="QPushButton" name="btnAddFileNam">
+                   <property name="minimumSize">
+                    <size>
+                     <width>130</width>
+                     <height>35</height>
+                    </size>
+                   </property>
+                   <property name="text">
+                    <string>Thêm file</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QPushButton" name="btnClearFilesNam">
+                   <property name="minimumSize">
+                    <size>
+                     <width>130</width>
+                     <height>35</height>
+                    </size>
+                   </property>
+                   <property name="text">
+                    <string>Xóa tất cả</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <spacer name="buttonSpacerNam">
+                   <property name="orientation">
+                    <enum>Qt::Horizontal</enum>
+                   </property>
+                   <property name="sizeHint" stdset="0">
+                    <size>
+                     <width>40</width>
+                     <height>20</height>
+                    </size>
+                   </property>
+                  </spacer>
+                 </item>
+                </layout>
                </item>
                <item>
-                <widget class="QLabel" name="lblFileNam">
+                <widget class="QScrollArea" name="scrollFilesNam">
                  <property name="minimumSize">
                   <size>
-                   <width>220</width>
-                   <height>40</height>
+                   <width>450</width>
+                   <height>180</height>
                   </size>
                  </property>
-                 <property name="text">
-                  <string>Chưa chọn file</string>
+                 <property name="widgetResizable">
+                  <bool>true</bool>
                  </property>
+                 <widget class="QWidget" name="scrollAreaWidgetNam">
+                  <property name="geometry">
+                   <rect>
+                    <x>0</x>
+                    <y>0</y>
+                    <width>448</width>
+                    <height>178</height>
+                   </rect>
+                  </property>
+                  <layout class="QVBoxLayout" name="fileListNam">
+                   <property name="spacing">
+                    <number>5</number>
+                   </property>
+                   <property name="leftMargin">
+                    <number>10</number>
+                   </property>
+                   <property name="topMargin">
+                    <number>10</number>
+                   </property>
+                   <property name="rightMargin">
+                    <number>10</number>
+                   </property>
+                   <property name="bottomMargin">
+                    <number>10</number>
+                   </property>
+                   <item>
+                    <widget class="QLabel" name="lblEmptyNam">
+                     <property name="text">
+                      <string>Chưa có file nào được chọn
+Click "Thêm file" để bắt đầu</string>
+                     </property>
+                     <property name="alignment">
+                      <set>Qt::AlignCenter</set>
+                     </property>
+                    </widget>
+                   </item>
+                   <item>
+                    <spacer name="fileListSpacerNam">
+                     <property name="orientation">
+                      <enum>Qt::Vertical</enum>
+                     </property>
+                     <property name="sizeHint" stdset="0">
+                      <size>
+                       <width>20</width>
+                       <height>40</height>
+                      </size>
+                     </property>
+                    </spacer>
+                   </item>
+                  </layout>
+                 </widget>
                 </widget>
                </item>
               </layout>
@@ -838,7 +1137,7 @@
           <property name="sizeHint" stdset="0">
            <size>
             <width>20</width>
-            <height>30</height>
+            <height>20</height>
            </size>
           </property>
          </spacer>
@@ -894,7 +1193,7 @@
           <property name="sizeHint" stdset="0">
            <size>
             <width>20</width>
-            <height>40</height>
+            <height>20</height>
            </size>
           </property>
          </spacer>
@@ -915,7 +1214,16 @@
     </rect>
    </property>
   </widget>
-  <widget class="QStatusBar" name="statusbar" />
+  <widget class="QStatusBar" name="statusbar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>778</y>
+     <width>1200</width>
+     <height>22</height>
+    </rect>
+   </property>
+  </widget>
  </widget>
  <resources />
  <connections />
