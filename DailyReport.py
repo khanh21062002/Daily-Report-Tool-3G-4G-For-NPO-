@@ -24,54 +24,131 @@ class ReportWorkerThread(QThread):
     def run(self):
         try:
             self.progress_update.emit("Đang khởi tạo processor...")
-            processor = self.processor_class()
 
             # Tạo thư mục output riêng cho từng region
             output_dir = f"output_{self.region_name.replace(' ', '_').lower()}"
             os.makedirs(output_dir, exist_ok=True)
 
+            # Phân loại file dựa vào tên để tránh lộn data
+            all_day_files = []
+            busy_hour_files = []
+            volte_files = []
+
+            for file_path in self.file_paths:
+                filename = os.path.basename(file_path).lower()
+
+                # Kiểm tra file VoLTE
+                if 'volte' in filename:
+                    volte_files.append(file_path)
+                # Kiểm tra file Busy Hour (BH)
+                elif any(keyword in filename for keyword in ['bh', 'busy_hour', 'busy hour']):
+                    busy_hour_files.append(file_path)
+                # Kiểm tra file 24h/All Day
+                elif any(keyword in filename for keyword in ['24h', '24hour', 'all_day', 'allday']):
+                    all_day_files.append(file_path)
+                else:
+                    # Nếu không xác định được, hỏi người dùng hoặc dựa vào thứ tự
+                    # Ở đây tôi sẽ dựa vào index để phân loại tạm thời
+                    if len(all_day_files) == 0:
+                        all_day_files.append(file_path)
+                    else:
+                        busy_hour_files.append(file_path)
+
+            # Xử lý báo cáo VoLTE nếu có file VoLTE
+            if volte_files:
+                self.progress_update.emit("Đang xử lý báo cáo VoLTE...")
+                success = self._process_volte_report(volte_files[0], output_dir)
+                if success:
+                    success_msg = f"""Tạo báo cáo VoLTE {self.name} thành công!
+
+Thông tin báo cáo:
+• Loại: {self.name} VoLTE
+• Người tạo: {self.creator}
+• Khu vực: {self.region_name}
+• File xử lý: {os.path.basename(volte_files[0])}
+• Thư mục kết quả: {output_dir}
+
+Kết quả đã được lưu vào thư mục: {output_dir}"""
+                    self.finished_report.emit(True, success_msg)
+                else:
+                    self.finished_report.emit(False, "Lỗi khi tạo báo cáo VoLTE")
+                return
+
+            # Xử lý báo cáo 4G FDD Data thông thường
+            if not all_day_files and not busy_hour_files:
+                self.finished_report.emit(False, "Không tìm thấy file dữ liệu phù hợp!")
+                return
+
+            processor = self.processor_class()
             processed_files = []
             chart_paths = []
 
-            # Xử lý từng file
-            for i, file_path in enumerate(self.file_paths):
-                self.progress_update.emit(
-                    f"Đang xử lý file {i + 1}/{len(self.file_paths)}: {os.path.basename(file_path)}")
+            # Xử lý file All Day
+            if all_day_files:
+                for file_path in all_day_files:
+                    self.progress_update.emit(f"Đang xử lý file All Day: {os.path.basename(file_path)}")
 
-                base_name = os.path.splitext(os.path.basename(file_path))[0]
-                csv_file = os.path.join(output_dir, f"{base_name}_clean.csv")
+                    base_name = os.path.splitext(os.path.basename(file_path))[0]
+                    csv_file = os.path.join(output_dir, f"{base_name}_24h_clean.csv")
 
-                # Chuyển đổi Excel sang CSV
-                df = processor.clean_excel_to_csv(file_path, csv_file)
+                    df = processor.clean_excel_to_csv(file_path, csv_file)
+                    if df is not None:
+                        processed_files.append(csv_file)
+                    else:
+                        self.finished_report.emit(False, f"Lỗi khi xử lý file All Day: {os.path.basename(file_path)}")
+                        return
 
-                if df is not None:
-                    processed_files.append(csv_file)
-                else:
-                    self.finished_report.emit(False, f"Lỗi khi xử lý file: {os.path.basename(file_path)}")
-                    return
+            # Xử lý file Busy Hour
+            if busy_hour_files:
+                for file_path in busy_hour_files:
+                    self.progress_update.emit(f"Đang xử lý file Busy Hour: {os.path.basename(file_path)}")
 
+                    base_name = os.path.splitext(os.path.basename(file_path))[0]
+                    csv_file = os.path.join(output_dir, f"{base_name}_BH_clean.csv")
+
+                    df = processor.clean_excel_to_csv(file_path, csv_file)
+                    if df is not None:
+                        processed_files.append(csv_file)
+                    else:
+                        self.finished_report.emit(False, f"Lỗi khi xử lý file Busy Hour: {os.path.basename(file_path)}")
+                        return
+
+            # Đảm bảo có đủ 2 file để tạo biểu đồ
             if len(processed_files) >= 2:
-                # Nếu có ít nhất 2 file, sử dụng 2 file đầu cho All Day và Busy Hour
+                # Tìm file All Day và Busy Hour
+                all_day_csv = None
+                busy_hour_csv = None
+
+                for csv_file in processed_files:
+                    filename = os.path.basename(csv_file).lower()
+                    if '24h' in filename or 'allday' in filename:
+                        all_day_csv = csv_file
+                    elif 'bh' in filename or 'busy' in filename:
+                        busy_hour_csv = csv_file
+
+                # Nếu không phân loại được, dùng thứ tự
+                if not all_day_csv:
+                    all_day_csv = processed_files[0]
+                if not busy_hour_csv:
+                    busy_hour_csv = processed_files[1] if len(processed_files) > 1 else processed_files[0]
+
                 self.progress_update.emit("Đang tạo biểu đồ và dashboard...")
-                chart_paths = processor.create_charts_from_csv(
-                    processed_files[0], processed_files[1], output_dir
-                )
+                chart_paths = processor.create_charts_from_csv(all_day_csv, busy_hour_csv, output_dir)
+
+                # Tạo báo cáo tổng hợp
+                self.progress_update.emit("Đang tạo báo cáo tổng hợp...")
+                processor.create_summary_table(all_day_csv, busy_hour_csv, output_dir)
+
             elif len(processed_files) == 1:
                 # Nếu chỉ có 1 file, sử dụng file đó cho cả hai
                 import shutil
-                csv_copy = processed_files[0].replace('_clean.csv', '_BH_clean.csv')
-                shutil.copy2(processed_files[0], csv_copy)
-                processed_files.append(csv_copy)
+                original_file = processed_files[0]
+                duplicated_file = original_file.replace('_clean.csv', '_duplicate_clean.csv')
+                shutil.copy2(original_file, duplicated_file)
+                processed_files.append(duplicated_file)
 
                 self.progress_update.emit("Đang tạo biểu đồ và dashboard...")
-                chart_paths = processor.create_charts_from_csv(
-                    processed_files[0], processed_files[1], output_dir
-                )
-
-            # Tạo báo cáo tổng hợp
-            if len(processed_files) >= 2:
-                self.progress_update.emit("Đang tạo báo cáo tổng hợp...")
-                processor.create_summary_table(processed_files[0], processed_files[1], output_dir)
+                chart_paths = processor.create_charts_from_csv(processed_files[0], processed_files[1], output_dir)
 
             success_msg = f"""Tạo báo cáo {self.name} thành công!
 
@@ -91,6 +168,30 @@ Kết quả đã được lưu vào thư mục: {output_dir}"""
         except Exception as e:
             self.finished_report.emit(False, f"Lỗi khi tạo báo cáo: {str(e)}")
 
+    def _process_volte_report(self, volte_file_path, output_dir):
+        """Xử lý báo cáo VoLTE"""
+        try:
+            # Import VoLTE processor
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            path_4g = os.path.join(current_dir, '4G')
+            if path_4g not in sys.path:
+                sys.path.insert(0, path_4g)
+
+            from DataVisualizationVoLTEFor4G import VoLTEKPIProcessor
+
+            # Tạo processor và xử lý
+            volte_processor = VoLTEKPIProcessor()
+            success = volte_processor.process_complete_workflow(volte_file_path, output_dir)
+
+            return success
+
+        except ImportError as e:
+            print(f"❌ Lỗi import VoLTE processor: {e}")
+            return False
+        except Exception as e:
+            print(f"❌ Lỗi xử lý VoLTE: {e}")
+            return False
+
 
 class FileItemWidget(QWidget):
     """Widget hiển thị thông tin một file với nút xóa"""
@@ -105,18 +206,33 @@ class FileItemWidget(QWidget):
         layout = QHBoxLayout()
         layout.setContentsMargins(5, 5, 5, 5)
 
-        # Label hiển thị tên file
-        self.file_label = QLabel(os.path.basename(self.file_path))
-        self.file_label.setStyleSheet("""
-            QLabel {
+        # Label hiển thị tên file với phân loại
+        filename = os.path.basename(self.file_path)
+        file_type = self._classify_file(filename)
+        display_text = f"{filename} [{file_type}]"
+
+        self.file_label = QLabel(display_text)
+
+        # Màu sắc khác nhau cho từng loại file
+        if file_type == "VoLTE":
+            bg_color = "#e74c3c"  # Đỏ cho VoLTE
+        elif file_type == "24H":
+            bg_color = "#3498db"  # Xanh dương cho 24H
+        elif file_type == "BH":
+            bg_color = "#f39c12"  # Cam cho BH
+        else:
+            bg_color = "#95a5a6"  # Xám cho Unknown
+
+        self.file_label.setStyleSheet(f"""
+            QLabel {{
                 color: #ffffff;
                 font-size: 12px;
                 padding: 5px 10px;
-                background-color: #4a90e2;
-                border: 1px solid #4a90e2;
+                background-color: {bg_color};
+                border: 1px solid {bg_color};
                 border-radius: 4px;
                 min-height: 25px;
-            }
+            }}
         """)
         self.file_label.setToolTip(self.file_path)
 
@@ -143,6 +259,19 @@ class FileItemWidget(QWidget):
 
         self.setLayout(layout)
 
+    def _classify_file(self, filename):
+        """Phân loại file dựa vào tên"""
+        filename_lower = filename.lower()
+
+        if 'volte' in filename_lower:
+            return "VoLTE"
+        elif any(keyword in filename_lower for keyword in ['bh', 'busy_hour', 'busy hour']):
+            return "BH"
+        elif any(keyword in filename_lower for keyword in ['24h', '24hour', 'all_day', 'allday']):
+            return "24H"
+        else:
+            return "Unknown"
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -156,7 +285,7 @@ class MainWindow(QMainWindow):
             sys.exit(1)
 
         # Import module 4G
-        self.import_4g_module()
+        self.import_4g_modules()
 
         # Biến lưu trữ file paths (giờ là list thay vì single path)
         self.file_paths = {
@@ -172,27 +301,36 @@ class MainWindow(QMainWindow):
         # Worker thread
         self.worker_thread = None
 
-    def import_4g_module(self):
-        """Import module 4G"""
+    def import_4g_modules(self):
+        """Import cả 2 module 4G"""
         try:
             current_dir = os.path.dirname(os.path.abspath(__file__))
             path_4g = os.path.join(current_dir, '4G')
             if path_4g not in sys.path:
                 sys.path.insert(0, path_4g)
 
+            # Import FDD Data processor
             from DataVisualizationFor4G_V2 import ExcelCSVProcessor
             self.ExcelCSVProcessor = ExcelCSVProcessor
             self.import_4g_success = True
             print("✅ Import DataVisualizationFor4G_V2 thành công!")
 
+            # Import VoLTE processor
+            from DataVisualizationVoLTEFor4G import VoLTEKPIProcessor
+            self.VoLTEKPIProcessor = VoLTEKPIProcessor
+            self.import_volte_success = True
+            print("✅ Import DataVisualizationVoLTEFor4G thành công!")
+
         except ImportError as e:
-            print(f"❌ Lỗi import DataVisualizationFor4G_V2: {e}")
+            print(f"❌ Lỗi import modules: {e}")
             self.import_4g_success = False
+            self.import_volte_success = False
             self.ExcelCSVProcessor = None
+            self.VoLTEKPIProcessor = None
 
     def setup_ui(self):
         """Thiết lập giao diện"""
-        self.setWindowTitle("Ứng dụng báo cáo hàng ngày - PyQt6 (Multi-File)")
+        self.setWindowTitle("Ứng dụng báo cáo hàng ngày - PyQt6 (Multi-File & VoLTE Support)")
         self.setGeometry(100, 100, 1200, 800)
 
         # Set main window background
@@ -595,7 +733,7 @@ class MainWindow(QMainWindow):
             layout.addWidget(empty_label)
             layout.addStretch()
         else:
-            # Hiển thị danh sách file
+            # Hiển thị danh sách file với phân loại
             for file_path in files:
                 file_widget = FileItemWidget(file_path)
                 file_widget.remove_requested.connect(
@@ -605,8 +743,16 @@ class MainWindow(QMainWindow):
 
             layout.addStretch()
 
+    def _detect_report_type(self, file_paths):
+        """Phát hiện loại báo cáo dựa vào tên file"""
+        for file_path in file_paths:
+            filename = os.path.basename(file_path).lower()
+            if 'volte' in filename:
+                return 'volte'
+        return '4g'
+
     def create_report(self, region):
-        """Xử lý tạo báo cáo"""
+        """Xử lý tạo báo cáo với phát hiện tự động loại báo cáo"""
         # Lấy thông tin từ form dựa vào region
         if region == 'bac':
             name = self.lineEditNameBac.currentText().strip()
@@ -634,13 +780,46 @@ class MainWindow(QMainWindow):
             self.show_warning_message("Vui lòng chọn ít nhất một file dữ liệu!")
             return
 
-        # Gọi hàm xử lý tương ứng
-        if name == "4G":
-            self.report_4G_multi_files(name, creator, region_name, self.file_paths[region])
-        elif name == "3G":
-            self.show_info_message("Chức năng báo cáo 3G đang được phát triển...")
+        # Phát hiện loại báo cáo dựa vào tên file
+        report_type = self._detect_report_type(self.file_paths[region])
+
+        if report_type == 'volte':
+            # Xử lý báo cáo VoLTE
+            if not self.import_volte_success:
+                self.show_warning_message(
+                    "Không thể load module xử lý VoLTE!\nVui lòng kiểm tra file DataVisualizationVoLTEFor4G.py"
+                )
+                return
+            self.report_volte(name, creator, region_name, self.file_paths[region])
         else:
-            self.show_warning_message("Loại báo cáo không được hỗ trợ!")
+            # Xử lý báo cáo 4G thông thường
+            if name == "4G":
+                self.report_4G_multi_files(name, creator, region_name, self.file_paths[region])
+            elif name == "3G":
+                self.show_info_message("Chức năng báo cáo 3G đang được phát triển...")
+            else:
+                self.show_warning_message("Loại báo cáo không được hỗ trợ!")
+
+    def report_volte(self, name, creator, region_name, file_paths):
+        """Xử lý tạo báo cáo VoLTE"""
+        if self.worker_thread and self.worker_thread.isRunning():
+            self.show_warning_message("Đang xử lý báo cáo khác, vui lòng chờ...")
+            return
+
+        # Tạo và chạy worker thread cho VoLTE
+        self.worker_thread = ReportWorkerThread(
+            self.VoLTEKPIProcessor, file_paths, f"{name} VoLTE", creator, region_name
+        )
+
+        # Kết nối signals
+        self.worker_thread.progress_update.connect(self.show_progress_message)
+        self.worker_thread.finished_report.connect(self.on_report_finished)
+
+        # Bắt đầu xử lý
+        self.worker_thread.start()
+
+        # Vô hiệu hóa nút tạo báo cáo
+        self.set_create_buttons_enabled(False)
 
     def report_4G_multi_files(self, name, creator, region_name, file_paths):
         """Xử lý tạo báo cáo 4G với nhiều file"""
