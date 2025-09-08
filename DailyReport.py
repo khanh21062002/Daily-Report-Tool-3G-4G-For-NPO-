@@ -7,7 +7,7 @@ from PyQt6 import uic
 import sys
 import os
 
-
+#haduykhanh
 class ReportWorkerThread(QThread):
     """Worker thread để xử lý báo cáo không block UI"""
     progress_update = pyqtSignal(str)
