@@ -6,8 +6,9 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6 import uic
 import sys
 import os
+from datetime import datetime
 
-#haduykhanh
+
 class ReportWorkerThread(QThread):
     """Worker thread để xử lý báo cáo không block UI"""
     progress_update = pyqtSignal(str)
@@ -25,9 +26,13 @@ class ReportWorkerThread(QThread):
         try:
             self.progress_update.emit("Đang khởi tạo processor...")
 
-            # Tạo thư mục output riêng cho từng region
-            output_dir = f"output_{self.region_name.replace(' ', '_').lower()}"
+            # Tạo thư mục output với cấu trúc: output_region/YYYY-MM-DD/
+            current_date = datetime.now().strftime("%Y-%m-%d")
+            base_output_dir = f"output_{self.region_name.replace(' ', '_').lower()}"
+            output_dir = os.path.join(base_output_dir, current_date)
             os.makedirs(output_dir, exist_ok=True)
+
+            print(f"Tạo thư mục output: {output_dir}")
 
             # Phân loại file dựa vào tên để tránh lộn data
             all_day_files = []
@@ -65,6 +70,7 @@ Thông tin báo cáo:
 • Loại: {self.name} VoLTE
 • Người tạo: {self.creator}
 • Khu vực: {self.region_name}
+• Ngày tạo: {current_date}
 • File xử lý: {os.path.basename(volte_files[0])}
 • Thư mục kết quả: {output_dir}
 
@@ -156,6 +162,7 @@ Thông tin báo cáo:
 • Loại: {self.name}
 • Người tạo: {self.creator}
 • Khu vực: {self.region_name}
+• Ngày tạo: {current_date}
 • Số file xử lý: {len(self.file_paths)}
 • Files đã xử lý: {', '.join([os.path.basename(f) for f in self.file_paths])}
 • Thư mục kết quả: {output_dir}
@@ -169,7 +176,7 @@ Kết quả đã được lưu vào thư mục: {output_dir}"""
             self.finished_report.emit(False, f"Lỗi khi tạo báo cáo: {str(e)}")
 
     def _process_volte_report(self, volte_file_path, output_dir):
-        """Xử lý báo cáo VoLTE"""
+        """Xử lý báo cáo VoLTE với thư mục output theo ngày"""
         try:
             # Import VoLTE processor
             current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -179,7 +186,7 @@ Kết quả đã được lưu vào thư mục: {output_dir}"""
 
             from DataVisualizationVoLTEFor4G import VoLTEKPIProcessor
 
-            # Tạo processor và xử lý
+            # Tạo processor và xử lý với output_dir theo ngày
             volte_processor = VoLTEKPIProcessor()
             success = volte_processor.process_complete_workflow(volte_file_path, output_dir)
 
@@ -330,7 +337,8 @@ class MainWindow(QMainWindow):
 
     def setup_ui(self):
         """Thiết lập giao diện"""
-        self.setWindowTitle("Ứng dụng báo cáo hàng ngày - PyQt6 (Multi-File & VoLTE Support)")
+        current_date = datetime.now().strftime("%Y-%m-%d")
+        self.setWindowTitle(f"Daily Report Tool - {current_date}")
         self.setGeometry(100, 100, 1200, 800)
 
         # Set main window background
@@ -382,9 +390,9 @@ class MainWindow(QMainWindow):
         self.btnMienTrung.setStyleSheet(nav_button_style)
         self.btnMienNam.setStyleSheet(nav_button_style)
 
-        # Style cho titles
+        # Style cho titles với hiển thị ngày
         title_base_style = """
-            font-size: 32px; 
+            font-size: 28px; 
             font-weight: bold; 
             margin: 30px;
             padding: 20px;
@@ -392,6 +400,10 @@ class MainWindow(QMainWindow):
             background-color: #404040;
             border: 2px solid {};
         """
+
+        # self.lblTitleBac.setText(f"Miền Bắc - {current_date}")
+        # self.lblTitleTrung.setText(f"Miền Trung - {current_date}")
+        # self.lblTitleNam.setText(f"Miền Nam - {current_date}")
 
         self.lblTitleBac.setStyleSheet(title_base_style.format("#4a90e2") + "color: #4a90e2;")
         self.lblTitleTrung.setStyleSheet(title_base_style.format("#ff9f43") + "color: #ff9f43;")
@@ -873,14 +885,18 @@ class MainWindow(QMainWindow):
         self.btnCreateNam.setEnabled(enabled)
 
     def open_output_folder(self, message):
-        """Mở thư mục kết quả"""
+        """Mở thư mục kết quả theo cấu trúc ngày mới"""
         try:
             import subprocess
             import platform
             import re
 
-            # Tìm đường dẫn thư mục từ message
-            output_match = re.search(r'output_[^/\s]+', message)
+            # Tìm đường dẫn thư mục từ message với pattern mới
+            output_match = re.search(r'output_[^/\s]+[/\\]\d{4}-\d{2}-\d{2}', message)
+            if not output_match:
+                # Fallback to old pattern
+                output_match = re.search(r'output_[^/\s]+', message)
+
             if output_match:
                 output_dir = output_match.group()
 

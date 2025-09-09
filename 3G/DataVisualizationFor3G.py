@@ -190,37 +190,61 @@ class ExcelCSVProcessorFor3G:
             return df
 
     def aggregate_daily_data_ZTE(self, df, date_col):
-        """Aggregate ZTE data by date"""
+        """Aggregate ZTE data by date - FIXED VERSION"""
         try:
-            target_rncs = ['HNRZ01(101)', 'HNRZ01(102)']
+            target_rncs = ['HNRZ01(101)', 'HNRZ02(102)']
             df_filtered = df[df['RNC Managed NE Name'].isin(target_rncs)].copy()
 
             for col in df_filtered.columns:
                 if col not in [date_col, 'RNC Managed NE Name']:
                     df_filtered[col] = pd.to_numeric(df_filtered[col], errors='coerce')
 
+            print("ZTE data types after conversion:")
+            print(df_filtered.dtypes)
+
             numeric_cols = df_filtered.select_dtypes(include=[np.number]).columns.tolist()
             if date_col in numeric_cols:
                 numeric_cols.remove(date_col)
 
-            agg_dict = {col: 'mean' for col in numeric_cols}
+            # Key fix: Group by BOTH date AND RNC, then aggregate by date only
+            agg_dict_by_rnc = {col: 'mean' for col in numeric_cols}
 
-            non_numeric_cols = df_filtered.select_dtypes(exclude=[np.number]).columns.tolist()
+            # First: aggregate by date and RNC to get daily averages per RNC
+            df_by_rnc_date = df_filtered.groupby([date_col, 'RNC Managed NE Name']).agg(agg_dict_by_rnc).reset_index()
+
+            print(f"After RNC-date aggregation: {len(df_by_rnc_date)} records")
+            print("Sample data by RNC-Date:")
+            print(df_by_rnc_date.head())
+
+            # Second: aggregate by date only to get average across both RNCs
+            agg_dict_final = {col: 'mean' for col in numeric_cols}
+
+            non_numeric_cols = df_by_rnc_date.select_dtypes(exclude=[np.number]).columns.tolist()
             for col in non_numeric_cols:
                 if col not in [date_col, 'RNC Managed NE Name']:
-                    agg_dict[col] = 'first'
+                    agg_dict_final[col] = 'first'
 
-            df_aggregated = df_filtered.groupby(date_col).agg(agg_dict).reset_index()
+            print("Numeric cols for final aggregation:", numeric_cols)
+            print("Non-numeric cols for final aggregation:", non_numeric_cols)
 
+            # Final aggregation: average across both RNCs for each date
+            df_aggregated = df_by_rnc_date.groupby(date_col).agg(agg_dict_final).reset_index()
+
+            # Round numeric values
             for col in numeric_cols:
                 if col in df_aggregated.columns:
                     df_aggregated[col] = df_aggregated[col].round(2)
 
-            print(f"Aggregated ZTE data: {len(df_aggregated)} days from {len(df_filtered)} records")
+            print(f"Final aggregated ZTE data: {len(df_aggregated)} days from {len(df_filtered)} original records")
+            print("Final aggregated sample:")
+            print(df_aggregated.head())
+
             return df_aggregated
 
         except Exception as e:
             print(f"Error aggregating ZTE data: {e}")
+            import traceback
+            traceback.print_exc()
             return df
 
     # ========== INDIVIDUAL VENDOR DASHBOARDS ==========
@@ -1408,8 +1432,8 @@ def main():
     # Create individual vendor dashboards (aggregated data)
     if len(converted_files_ericsson) >= 2:
         csv_files_ericsson = list(converted_files_ericsson.values())
-        csv_all_day_ericsson = csv_files_ericsson[0]
-        csv_busy_hour_ericsson = csv_files_ericsson[1]
+        csv_all_day_ericsson = csv_files_ericsson[1]
+        csv_busy_hour_ericsson = csv_files_ericsson[0]
         output_dir_ericsson = "output_ericsson"
         os.makedirs(output_dir_ericsson, exist_ok=True)
         processor.create_daily_dashboard_table_ericsson(csv_all_day_ericsson, csv_busy_hour_ericsson,
@@ -1417,8 +1441,8 @@ def main():
 
     if len(converted_files_zte) >= 2:
         csv_files_zte = list(converted_files_zte.values())
-        csv_all_day_zte = csv_files_zte[0]
-        csv_busy_hour_zte = csv_files_zte[1]
+        csv_all_day_zte = csv_files_zte[1]
+        csv_busy_hour_zte = csv_files_zte[0]
         output_dir_zte = "output_zte"
         os.makedirs(output_dir_zte, exist_ok=True)
         processor.create_daily_dashboard_table_ZTE(csv_all_day_zte, csv_busy_hour_zte, output_dir_zte)
