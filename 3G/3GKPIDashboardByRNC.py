@@ -12,6 +12,8 @@ import warnings
 warnings.filterwarnings('ignore')
 plt.rcParams['font.family'] = ['DejaVu Sans', 'Arial', 'sans-serif']
 plt.rcParams['axes.unicode_minus'] = False
+plt.style.use('default')
+sns.set_palette("husl")
 
 class Enhanced3GDashboard:
     def __init__(self, csv_folder_path=None, csv_files_list=None):
@@ -263,8 +265,8 @@ class Enhanced3GDashboard:
                         rnc_list.append(rnc_str)
 
             # Prioritize HNRZ01 if it exists
-            if any('HNRZ01' in rnc for rnc in rnc_list):
-                hnrz01_entries = [rnc for rnc in rnc_list if 'HNRZ01' in rnc]
+            if any('HNRZ01(101)' in rnc for rnc in rnc_list):
+                hnrz01_entries = [rnc for rnc in rnc_list if 'HNRZ01(101)' in rnc]
                 return hnrz01_entries[:1]  # Take first HNRZ01 entry
 
             return rnc_list[:1] if rnc_list else []
@@ -323,61 +325,75 @@ class Enhanced3GDashboard:
 
         return values
 
-    def calculate_delta(self, current_val, previous_val, kpi_list):
-        """Calculate percentage change"""
+    def calculate_delta_d_1(self, current_val, previous_val, kpi_name=None):
         if pd.isna(current_val) or pd.isna(previous_val) or previous_val == 0:
-            diff = 0
-        for kpi_name in kpi_list:
-            if kpi_name in ['CS CDR (%)', 'HSDPA CDR (%)']:
-                # For CDR, lower is better, so reverse the calculation
-                diff = ((previous_val - current_val) / previous_val) * 100
-            else:
-                diff = ((current_val - previous_val) / previous_val) * 100
+            return 0
+
+        # For CDR (Call Drop Rate), lower is better, so reverse the calculation
+        if kpi_name and 'CDR' in kpi_name:
+            diff = ((previous_val - current_val) / previous_val) * 100
+        else:
+            diff = ((current_val - previous_val) / (100 - current_val)) * 100
+
+        return diff
+    def calculate_delta_d_7(self, current_val, previous_val, kpi_name=None):
+        if pd.isna(current_val) or pd.isna(previous_val) or previous_val == 0:
+            return 0
+
+        # For CDR (Call Drop Rate), lower is better, so reverse the calculation
+        if kpi_name and 'CDR' in kpi_name:
+            diff = ((previous_val - current_val) / previous_val) * 100
+        else:
+            diff = ((current_val - previous_val) / (100 - previous_val)) * 100
+
         return diff
 
     def get_color_for_delta(self, delta, kpi_name=""):
         """Get color based on delta value and KPI type"""
-        if abs(delta) < 0.1:  # Minimal change
+        temp = delta / 100
+        if temp >= -0.3 and temp < 0.3  :  # Minimal change
             return '#FFFF99'  # Light yellow
 
         # For CDR (Call Drop Rate), lower is better
         is_lower_better = 'CDR' in kpi_name
 
         if is_lower_better:
-            if delta < 0:  # Improvement (decrease in CDR)
+            if temp > 0.3:  # Improvement (decrease in CDR)
                 return '#90EE90'  # Light green
             else:  # Degradation (increase in CDR)
                 return '#FFB6C1'  # Light red
         else:
-            if delta > 0:  # Improvement
+            if temp > 0.3:  # Improvement
                 return '#90EE90'  # Light green
             else:  # Degradation
                 return '#FFB6C1'  # Light red
 
     def format_delta(self, delta):
         """Alternative format using more compatible symbols"""
-        if abs(delta) < 0.1:
-            return "- 0%"
-        elif delta > 0:
+        temp = delta / 100
+        if temp >= -0.3 and temp < 0.3:
+            return f"► {delta:.2f}%"
+        elif temp >= 0.3:
             return f"▲ +{delta:.2f}%"  # Triangle up
         else:
             return f"▼ {delta:.2f}%"  # Triangle down
 
     def get_delta_text_color(self, delta, kpi_name=""):
+        temp = delta / 100
         """Get text color for delta based on delta value and KPI type"""
-        if abs(delta) < 0.1:  # Minimal change
+        if temp >= -0.3 and temp < 0.3 :  # Minimal change
             return '#000000'  # Màu đen cho mũi tên ngang
 
         # For CDR (Call Drop Rate), lower is better
         is_lower_better = 'CDR' in kpi_name
 
         if is_lower_better:
-            if delta < 0:  # Improvement (decrease in CDR) - màu xanh lá
+            if temp >= 0.3:  # Improvement (decrease in CDR) - màu xanh lá
                 return '#2E7D32'  # Xanh lá đậm
             else:  # Degradation (increase in CDR) - màu đỏ
                 return '#C62828'  # Đỏ đậm
         else:
-            if delta > 0:  # Improvement - màu xanh lá
+            if temp >= 0.3:  # Improvement - màu xanh lá
                 return '#2E7D32'  # Xanh lá đậm
             else:  # Degradation - màu đỏ
                 return '#C62828'  # Đỏ đậm
@@ -508,8 +524,12 @@ class Enhanced3GDashboard:
         latest_values, second_values, week_values = date_data
 
         # Calculate deltas
-        delta_d1_values = [self.calculate_delta(latest_values[i], second_values[i]) for i in range(len(latest_values))]
-        delta_d7_values = [self.calculate_delta(latest_values[i], week_values[i]) for i in range(len(latest_values))]
+        # delta_d1_values = [self.calculate_delta(latest_values[i], second_values[i]) for i in range(len(latest_values))]
+        # delta_d7_values = [self.calculate_delta(latest_values[i], week_values[i]) for i in range(len(latest_values))]
+        delta_d1_values = [self.calculate_delta_d_1(latest_values[i], second_values[i], kpi_name) for i in
+                           range(len(latest_values))]
+        delta_d7_values = [self.calculate_delta_d_7(latest_values[i], week_values[i], kpi_name) for i in
+                           range(len(latest_values))]
 
         # Use consistent header position
         header_y = 0.85  # Same as header position
@@ -664,7 +684,7 @@ def create_dashboard_from_folder(folder_path, title="Daily 3G KPI Dashboard", ti
         save_path = None
         if save_png:
             save_path = os.path.join(folder_path,
-                                     f"3G_KPI_Dashboard_{time_period}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+                                     f"3G_KPI_Dashboard_{time_period}_{datetime.now().strftime('%Y%m%d')}.png")
 
         fig = dashboard.create_dashboard(title=title, time_period=time_period, save_path=save_path)
         return fig
@@ -683,7 +703,7 @@ def create_dashboard_from_files(csv_files_list, title="Daily 3G KPI Dashboard", 
         save_path = None
         if save_png:
             save_path = os.path.join(output_dir,
-                                     f"3G_KPI_Dashboard_{time_period}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+                                     f"3G_KPI_Dashboard_{time_period}_{datetime.now().strftime('%Y%m%d')}.png")
 
         fig = dashboard.create_dashboard(title=title, time_period=time_period, save_path=save_path)
         return fig
