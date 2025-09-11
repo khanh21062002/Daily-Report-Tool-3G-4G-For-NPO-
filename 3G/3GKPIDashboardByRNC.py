@@ -251,12 +251,14 @@ class Enhanced3GDashboard:
         return []
 
     def get_rnc_identifiers_zte(self):
-        """Get ZTE RNC identifiers - specifically looking for HNRZ01"""
+        """Get ZTE RNC identifiers - FIXED VERSION"""
         if self.zte_data.empty:
             return []
 
         if 'RNC Managed NE Name' in self.zte_data.columns:
             unique_rncs = self.zte_data['RNC Managed NE Name'].dropna().unique()
+            print(f"DEBUG: All ZTE RNCs found: {unique_rncs}")  # Debug line
+
             rnc_list = []
             for rnc in unique_rncs:
                 if pd.notna(rnc):
@@ -264,17 +266,23 @@ class Enhanced3GDashboard:
                     if rnc_str:  # Not empty after strip
                         rnc_list.append(rnc_str)
 
-            # Prioritize HNRZ01 if it exists
-            if any('HNRZ01(101)' in rnc for rnc in rnc_list):
-                hnrz01_entries = [rnc for rnc in rnc_list if 'HNRZ01(101)' in rnc]
-                return hnrz01_entries[:1]  # Take first HNRZ01 entry
+            print(f"DEBUG: Filtered ZTE RNC list: {rnc_list}")  # Debug line
 
-            return rnc_list[:1] if rnc_list else []
+            # Return first HNRZ01 entry or simplified name
+            if rnc_list:
+                # Use the first available RNC and create a simplified display name
+                first_rnc = rnc_list[0]
+                if 'HNRZ01' in first_rnc:
+                    return ['HNRZ01']  # Simplified display name
+                else:
+                    return [first_rnc]
+
+            return []
 
         return []
 
     def extract_kpi_data(self, vendor, kpi_name, column_name, rnc_id):
-        """Extract KPI data for specific vendor, KPI, and RNC"""
+        """Extract KPI data for specific vendor, KPI, and RNC - FIXED VERSION"""
         if vendor == 'Ericsson':
             data_df = self.ericsson_data
             rnc_column = 'RNC Id'
@@ -283,22 +291,44 @@ class Enhanced3GDashboard:
             rnc_column = 'RNC Managed NE Name'
 
         if data_df.empty or column_name not in data_df.columns:
+            print(f"DEBUG: No data or column not found for {vendor} - {kpi_name} - {column_name}")
             return [np.nan, np.nan, np.nan]
+
+        print(f"DEBUG: Processing {vendor} - {kpi_name} - RNC: {rnc_id}")
 
         values = []
         for target_date in self.target_dates:
-            # Filter data for specific date and RNC
             try:
-                filtered_data = data_df[
-                    (data_df['Date'].dt.date == target_date.date()) &
-                    (data_df[rnc_column].astype(str).str.contains(str(rnc_id), na=False))
-                    ]
+                # For ZTE with simplified RNC name, search for any HNRZ01 variant
+                if vendor == 'ZTE' and rnc_id == 'HNRZ01':
+                    # Get all HNRZ01 entries for the specific date
+                    date_filter = data_df['Date'].dt.date == target_date.date()
+                    rnc_filter = data_df[rnc_column].astype(str).str.contains('HNRZ01', na=False)
+                    filtered_data = data_df[date_filter & rnc_filter]
+
+                    print(f"DEBUG ZTE: Date {target_date.date()}, Found {len(filtered_data)} records")
+                else:
+                    # Original logic for Ericsson
+                    filtered_data = data_df[
+                        (data_df['Date'].dt.date == target_date.date()) &
+                        (data_df[rnc_column].astype(str).str.contains(str(rnc_id), na=False))
+                        ]
+
+                    print(
+                        f"DEBUG Ericsson: Date {target_date.date()}, RNC {rnc_id}, Found {len(filtered_data)} records")
 
                 if not filtered_data.empty and column_name in filtered_data.columns:
-                    # Get the first non-null value
+                    # For ZTE, calculate average of all HNRZ01 entries
                     column_data = filtered_data[column_name].dropna()
                     if not column_data.empty:
-                        value = column_data.iloc[0]
+                        if vendor == 'ZTE' and len(column_data) > 1:
+                            # Average multiple HNRZ01 entries
+                            value = column_data.mean()
+                            print(f"DEBUG ZTE: Averaged {len(column_data)} values = {value}")
+                        else:
+                            # Single value or Ericsson
+                            value = column_data.iloc[0]
+                            print(f"DEBUG: Single value = {value}")
 
                         # Convert percentage strings to float if needed
                         if isinstance(value, str):
@@ -315,14 +345,17 @@ class Enhanced3GDashboard:
 
                         values.append(value)
                     else:
+                        print(f"DEBUG: No valid data in column {column_name}")
                         values.append(np.nan)
                 else:
+                    print(f"DEBUG: No filtered data found or column missing")
                     values.append(np.nan)
 
             except Exception as e:
-                print(f"Warning: Error extracting data for {kpi_name}, {rnc_id}: {str(e)}")
+                print(f"WARNING: Error extracting data for {kpi_name}, {rnc_id}: {str(e)}")
                 values.append(np.nan)
 
+        print(f"DEBUG: Final values for {vendor}-{kpi_name}-{rnc_id}: {values}")
         return values
 
     def calculate_delta_d_1(self, current_val, previous_val, kpi_name=None):
