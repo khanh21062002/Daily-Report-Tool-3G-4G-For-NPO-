@@ -7,6 +7,7 @@ from matplotlib import pyplot as plt
 import matplotlib.dates as mdates
 from matplotlib.patches import Rectangle
 import seaborn as sns
+from matplotlib.table import Table
 
 # Set style for better looking plots
 plt.style.use('default')
@@ -110,7 +111,7 @@ class CountAbnormalCellFor3G:
             df = df.loc[:, ~df.columns.astype(str).str.contains(r"^Unnamed", na=False)]
             df = df.dropna(how="all")
 
-            date_col = df.columns[0]
+            date_col = df.columns[1]
             df[date_col] = pd.to_datetime(df[date_col], errors="coerce", dayfirst=True)
             df = df.dropna(subset=[date_col]).sort_values(by=date_col).reset_index(drop=True)
 
@@ -181,10 +182,20 @@ class CountAbnormalCellFor3G:
             print(f"Error verifying {csv_path}: {e}")
             return False
 
-    # ========== NEW FUNCTIONS FOR CELL COUNTING ==========
+    # ========== VENDOR-SPECIFIC CELL COUNTING ==========
 
-    def get_province_from_cell(self, cell_name):
-        """Extract province from cell name based on first 4 characters"""
+    def get_province_from_ericsson_cell(self, ucell_id):
+        """Extract province from Ericsson UCell ID based on first 4 characters"""
+        if pd.isna(ucell_id):
+            return None
+        cell_str = str(ucell_id).strip()
+        if len(cell_str) >= 4:
+            prefix = cell_str[:4].upper()
+            return self.province_mapping.get(prefix, None)
+        return None
+
+    def get_province_from_zte_cell(self, cell_name):
+        """Extract province from ZTE Cell Name based on first 4 characters"""
         if pd.isna(cell_name):
             return None
         cell_str = str(cell_name).strip()
@@ -193,142 +204,160 @@ class CountAbnormalCellFor3G:
             return self.province_mapping.get(prefix, None)
         return None
 
-    def count_abnormal_cells_by_province(self, csv_path, vendor='ericsson', rtwp_threshold=-95):
-        """Count cells with RTWP > threshold by province and hour"""
+    def count_abnormal_cells_ericsson(self, csv_path, rtwp_threshold=-95):
+        """Count Ericsson cells with RTWP > threshold by province and hour"""
         try:
             # Read CSV file
             df = pd.read_csv(csv_path)
-            print(f"\nProcessing {vendor.upper()} data from {csv_path}")
+            print(f"\nProcessing ERICSSON data from {csv_path}")
             print(f"Total rows: {len(df)}")
-            print(f"Columns: {list(df.columns[:10])}")  # Show first 10 columns for debugging
 
-            # Find date/time column
+            # Check required columns exist
+            required_cols = ['Date', 'Hour', 'UCell Id', 'RTWP 3G']
+            missing_cols = [col for col in required_cols if col not in df.columns]
+
+            if missing_cols:
+                print(f"ERROR: Missing columns: {missing_cols}")
+                print(f"Available columns: {df.columns.tolist()}")
+                return None
+
+            # NO DATETIME CONVERSION - Use Date and Hour as they are
+            # Just ensure they are not null
+            df = df.dropna(subset=['Date', 'Hour', 'UCell Id', 'RTWP 3G'])
+
+            print(f"Valid rows after removing nulls: {len(df)}")
+
+            # Process data
+            results = []
+            processed_cells = set()
+
+            for idx, row in df.iterrows():
+                ucell_id = str(row['UCell Id']).strip()
+
+                # Check if valid UCell ID starting with U
+                if ucell_id.upper().startswith('U'):
+                    province = self.get_province_from_ericsson_cell(ucell_id)
+
+                    if province:
+                        try:
+                            rtwp_value = float(row['RTWP 3G'])
+                            if rtwp_value > rtwp_threshold:
+                                # Use Date and Hour as-is from the CSV
+                                date_val = row['Date']
+                                hour_val = int(row['Hour']) if pd.notna(row['Hour']) else 0
+
+                                # Create unique key
+                                cell_key = f"{date_val}_{hour_val}_{ucell_id}"
+
+                                if cell_key not in processed_cells:
+                                    processed_cells.add(cell_key)
+                                    results.append({
+                                        'Date': date_val,
+                                        'Hour': hour_val,
+                                        'Cell': ucell_id,
+                                        'Province': province,
+                                        'RTWP': rtwp_value
+                                    })
+                        except (ValueError, TypeError):
+                            continue
+
+            if results:
+                result_df = pd.DataFrame(results)
+                print(f"Found {len(result_df)} records with RTWP > {rtwp_threshold} dBm")
+                print(f"Unique cells affected: {result_df['Cell'].nunique()}")
+
+                # Show province distribution
+                province_counts = result_df.groupby('Province')['Cell'].nunique().sort_values(ascending=False)
+                print(f"\nProvinces distribution:")
+                for prov, count in province_counts.items():
+                    print(f"  {prov}: {count} cells")
+
+                return result_df
+            else:
+                print("No abnormal cells found in Ericsson data")
+                return pd.DataFrame()
+
+        except Exception as e:
+            print(f"Error processing Ericsson data: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    def count_abnormal_cells_zte(self, csv_path, rtwp_threshold=-95):
+        """Count ZTE cells with RTWP > threshold by province and hour"""
+        try:
+            # Read CSV file
+            df = pd.read_csv(csv_path)
+            print(f"\nProcessing ZTE data from {csv_path}")
+            print(f"Total rows: {len(df)}")
+
+            # Find columns
             date_col = None
+            cell_name_col = None
+
             for col in df.columns:
-                if 'date' in col.lower() or 'time' in col.lower():
+                col_lower = col.lower()
+                if 'start time' in col_lower:
                     date_col = col
-                    break
+                elif 'cell name' in col_lower:
+                    cell_name_col = col
 
-            if date_col is None:
-                print("Error: No date/time column found")
+            if not date_col:
+                print("ERROR: No 'Start Time' column found")
+                return None
+            if not cell_name_col:
+                print("ERROR: No 'Cell Name' column found")
                 return None
 
-            print(f"Using date column: {date_col}")
+            print(f"Using columns: Start Time={date_col}, Cell Name={cell_name_col}")
 
-            # Convert to datetime - handle different formats
-            # First, check if already datetime
-            if df[date_col].dtype == 'object' or df[date_col].dtype == 'string':
-                # Try multiple date formats
-                for date_format in ['%Y-%m-%d %H:%M:%S', '%d/%m/%Y %H:%M', '%Y/%m/%d %H:%M:%S', None]:
-                    try:
-                        if date_format:
-                            df[date_col] = pd.to_datetime(df[date_col], format=date_format, errors='coerce')
-                        else:
-                            df[date_col] = pd.to_datetime(df[date_col], errors='coerce', dayfirst=True)
-                        break
-                    except:
-                        continue
+            # Find RTWP columns
+            rtwp_cols = []
+            for col in df.columns:
+                col_lower = col.lower()
+                if any(keyword in col_lower for keyword in ['rtwp', 'avg', 'mean', 'average']):
+                    if col not in [date_col, cell_name_col]:
+                        rtwp_cols.append(col)
 
-            # Check if conversion was successful
-            if df[date_col].dtype != 'datetime64[ns]':
-                print(f"Error: Could not convert {date_col} to datetime. Current dtype: {df[date_col].dtype}")
-                print(f"Sample values: {df[date_col].head()}")
+            print(f"RTWP columns found: {rtwp_cols}")
+
+            if not rtwp_cols:
+                print("ERROR: No RTWP columns found")
                 return None
 
-            # Remove rows with invalid dates
-            df = df.dropna(subset=[date_col])
-
-            if len(df) == 0:
-                print("Error: No valid dates found after conversion")
-                return None
+            # Convert Start Time to datetime to extract date and hour
+            df['temp_datetime'] = pd.to_datetime(df[date_col], errors='coerce')
+            df = df.dropna(subset=['temp_datetime'])
 
             # Extract date and hour
-            df['Date'] = df[date_col].dt.date
-            df['Hour'] = df[date_col].dt.hour
+            df['Date'] = df['temp_datetime'].dt.date
+            df['Hour'] = df['temp_datetime'].dt.hour
 
-            # Process based on vendor
+            # Drop temp column
+            df = df.drop('temp_datetime', axis=1)
+
+            print(f"Valid rows after date processing: {len(df)}")
+
+            # Process data
             results = []
+            processed_cells = set()
 
-            if vendor.lower() == 'ericsson':
-                # For Ericsson: columns are UCell IDs
-                # Identify RTWP value columns (exclude date, metadata columns)
-                cell_columns = []
-                for col in df.columns:
-                    if col not in [date_col, 'Date', 'Hour']:
-                        # Check if column name looks like a cell ID (starts with U followed by numbers)
-                        col_str = str(col).strip()
-                        if col_str.startswith('U') and len(col_str) >= 4:
-                            cell_columns.append(col)
+            for idx, row in df.iterrows():
+                cell_name = str(row[cell_name_col]).strip()
 
-                print(f"Found {len(cell_columns)} cell columns")
+                if cell_name and cell_name != 'nan':
+                    province = self.get_province_from_zte_cell(cell_name)
 
-                if not cell_columns:
-                    print("Warning: No cell columns found. Checking all numeric columns...")
-                    # If no U-prefixed columns, try all numeric columns
-                    cell_columns = [col for col in df.select_dtypes(include=[np.number]).columns
-                                    if col not in ['Date', 'Hour']]
+                    if province:
+                        for rtwp_col in rtwp_cols:
+                            if pd.notna(row[rtwp_col]):
+                                try:
+                                    rtwp_value = float(row[rtwp_col])
+                                    if rtwp_value > rtwp_threshold:
+                                        cell_key = f"{row['Date']}_{row['Hour']}_{cell_name}_{rtwp_col}"
 
-                for idx, row in df.iterrows():
-                    for cell_col in cell_columns:
-                        if pd.notna(row[cell_col]):
-                            try:
-                                rtwp_value = float(row[cell_col])
-                                if rtwp_value > rtwp_threshold:
-                                    province = self.get_province_from_cell(cell_col)
-                                    if province:
-                                        results.append({
-                                            'Date': row['Date'],
-                                            'Hour': row['Hour'],
-                                            'Cell': cell_col,
-                                            'Province': province,
-                                            'RTWP': rtwp_value
-                                        })
-                            except (ValueError, TypeError):
-                                continue
-
-            elif vendor.lower() == 'zte':
-                # For ZTE: Need to identify Cell Name and RTWP columns
-                print("Processing ZTE data structure...")
-
-                # Look for cell name column
-                cell_name_col = None
-                for col in df.columns:
-                    col_lower = col.lower()
-                    if 'cell' in col_lower and ('name' in col_lower or 'id' in col_lower):
-                        cell_name_col = col
-                        break
-                    # Also check if column contains cell-like values
-                    elif df[col].dtype == 'object':
-                        sample_val = df[col].dropna().iloc[0] if len(df[col].dropna()) > 0 else ''
-                        if str(sample_val).startswith('U') and len(str(sample_val)) >= 4:
-                            cell_name_col = col
-                            break
-
-                if cell_name_col:
-                    print(f"Cell name column: {cell_name_col}")
-
-                    # Find RTWP value columns
-                    rtwp_cols = []
-                    for col in df.columns:
-                        if col not in [date_col, cell_name_col, 'Date', 'Hour']:
-                            # Check if numeric column
-                            if df[col].dtype in [np.float64, np.int64]:
-                                rtwp_cols.append(col)
-                            elif 'rtwp' in col.lower() or 'avg' in col.lower() or 'mean' in col.lower():
-                                rtwp_cols.append(col)
-
-                    print(f"RTWP columns found: {len(rtwp_cols)}")
-
-                    for idx, row in df.iterrows():
-                        cell_name = row[cell_name_col]
-                        province = self.get_province_from_cell(cell_name)
-
-                        if province:
-                            for rtwp_col in rtwp_cols:
-                                if pd.notna(row[rtwp_col]):
-                                    try:
-                                        rtwp_value = float(row[rtwp_col])
-                                        if rtwp_value > rtwp_threshold:
+                                        if cell_key not in processed_cells:
+                                            processed_cells.add(cell_key)
                                             results.append({
                                                 'Date': row['Date'],
                                                 'Hour': row['Hour'],
@@ -336,49 +365,27 @@ class CountAbnormalCellFor3G:
                                                 'Province': province,
                                                 'RTWP': rtwp_value
                                             })
-                                    except (ValueError, TypeError):
-                                        continue
-                else:
-                    print("Warning: Could not identify cell name column in ZTE data")
-                    # Try to process as column-based structure like Ericsson
-                    print("Attempting to process as column-based structure...")
-
-                    cell_columns = []
-                    for col in df.columns:
-                        if col not in [date_col, 'Date', 'Hour']:
-                            col_str = str(col).strip()
-                            if col_str.startswith('U') and len(col_str) >= 4:
-                                cell_columns.append(col)
-
-                    if cell_columns:
-                        for idx, row in df.iterrows():
-                            for cell_col in cell_columns:
-                                if pd.notna(row[cell_col]):
-                                    try:
-                                        rtwp_value = float(row[cell_col])
-                                        if rtwp_value > rtwp_threshold:
-                                            province = self.get_province_from_cell(cell_col)
-                                            if province:
-                                                results.append({
-                                                    'Date': row['Date'],
-                                                    'Hour': row['Hour'],
-                                                    'Cell': cell_col,
-                                                    'Province': province,
-                                                    'RTWP': rtwp_value
-                                                })
-                                    except (ValueError, TypeError):
-                                        continue
+                                except (ValueError, TypeError):
+                                    continue
 
             if results:
                 result_df = pd.DataFrame(results)
-                print(f"Found {len(result_df)} cells with RTWP > {rtwp_threshold} dBm")
+                print(f"Found {len(result_df)} records with RTWP > {rtwp_threshold} dBm")
+                print(f"Unique cells affected: {result_df['Cell'].nunique()}")
+
+                # Show province distribution
+                province_counts = result_df.groupby('Province')['Cell'].nunique().sort_values(ascending=False)
+                print(f"\nProvinces distribution:")
+                for prov, count in province_counts.items():
+                    print(f"  {prov}: {count} cells")
+
                 return result_df
             else:
-                print("No abnormal cells found")
+                print("No abnormal cells found in ZTE data")
                 return pd.DataFrame()
 
         except Exception as e:
-            print(f"Error processing {csv_path}: {e}")
+            print(f"Error processing ZTE data: {e}")
             import traceback
             traceback.print_exc()
             return None
@@ -423,6 +430,123 @@ class CountAbnormalCellFor3G:
         except Exception as e:
             print(f"Error creating summary table: {e}")
             return None
+
+    def export_summary_to_excel(self, summary_table, abnormal_cells_df=None, output_path='rtwp_summary.xlsx'):
+        """Export summary table and detailed data to Excel with formatting"""
+        if summary_table is None or summary_table.empty:
+            print("No data to export")
+            return
+
+        try:
+            with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+                # Write summary table
+                summary_table.to_excel(writer, sheet_name='RTWP Summary', index=False)
+
+                # Write detailed data if available
+                if abnormal_cells_df is not None and not abnormal_cells_df.empty:
+                    abnormal_cells_df.to_excel(writer, sheet_name='Detailed Data', index=False)
+
+                    # Create province statistics
+                    province_stats = abnormal_cells_df.groupby('Province').agg({
+                        'Cell': 'nunique',
+                        'RTWP': ['mean', 'max', 'min', 'count']
+                    }).round(2)
+                    province_stats.columns = ['Unique_Cells', 'Avg_RTWP', 'Max_RTWP', 'Min_RTWP', 'Total_Records']
+                    province_stats = province_stats.sort_values('Unique_Cells', ascending=False)
+                    province_stats.to_excel(writer, sheet_name='Province Statistics')
+
+                    # Create hourly statistics if Hour column exists
+                    if 'Hour' in abnormal_cells_df.columns:
+                        hourly_stats = abnormal_cells_df.groupby('Hour').agg({
+                            'Cell': 'nunique',
+                            'RTWP': 'mean'
+                        }).round(2)
+                        hourly_stats.columns = ['Unique_Cells', 'Avg_RTWP']
+                        hourly_stats.to_excel(writer, sheet_name='Hourly Statistics')
+
+                print(f"Summary exported to: {output_path}")
+
+        except Exception as e:
+            print(f"Error exporting to Excel: {e}")
+
+    def export_summary_table_as_image(self, summary_table, output_path='rtwp_summary_table.png'):
+        """Export summary table as PNG image"""
+        if summary_table is None or summary_table.empty:
+            print("No data to export")
+            return
+
+        try:
+            # Prepare data for display
+            display_df = summary_table.copy()
+
+            # Limit rows for better visibility (show first 30 rows)
+            if len(display_df) > 30:
+                display_df = display_df.head(30)
+                print(f"Note: Showing first 30 rows out of {len(summary_table)} total rows")
+
+            # Create figure
+            fig, ax = plt.subplots(figsize=(20, 12))
+            ax.axis('tight')
+            ax.axis('off')
+
+            # Create table
+            table_data = []
+
+            # Add headers
+            headers = list(display_df.columns)
+            table_data.append(headers)
+
+            # Add data rows
+            for idx, row in display_df.iterrows():
+                table_data.append([str(val) for val in row.values])
+
+            # Create table
+            table = ax.table(cellText=table_data[1:],
+                             colLabels=table_data[0],
+                             cellLoc='center',
+                             loc='center',
+                             colWidths=[0.08] * len(headers))
+
+            # Style the table
+            table.auto_set_font_size(False)
+            table.set_fontsize(8)
+            table.scale(1.2, 1.5)
+
+            # Color header
+            for i in range(len(headers)):
+                table[(0, i)].set_facecolor('#4CAF50')
+                table[(0, i)].set_text_props(weight='bold', color='white')
+
+            # Color Grand Total column
+            if 'Grand Total' in headers:
+                gt_idx = headers.index('Grand Total')
+                for i in range(1, len(table_data)):
+                    table[(i, gt_idx)].set_facecolor('#FFE5B4')
+                    table[(i, gt_idx)].set_text_props(weight='bold')
+
+            # Alternate row colors
+            for i in range(1, len(table_data)):
+                if i % 2 == 0:
+                    for j in range(len(headers)):
+                        if headers[j] != 'Grand Total':
+                            table[(i, j)].set_facecolor('#F0F0F0')
+
+            # Add title
+            plt.title('RTWP Abnormal Cells Summary Table\n(Count of cells with RTWP > -95 dBm by Province and Hour)',
+                      fontsize=14, fontweight='bold', pad=20)
+
+            # Add subtitle with date range
+            date_range = f"Date Range: {summary_table['Date'].min()} to {summary_table['Date'].max()}"
+            plt.text(0.5, 0.95, date_range, transform=fig.transFigure,
+                     ha='center', fontsize=10, style='italic')
+
+            # Save figure
+            plt.savefig(output_path, dpi=300, bbox_inches='tight', pad_inches=0.5)
+            print(f"\nSummary table saved as image: {output_path}")
+            plt.close()
+
+        except Exception as e:
+            print(f"Error exporting summary table as image: {e}")
 
     def analyze_rtwp_patterns(self, abnormal_cells_df):
         """Analyze patterns in RTWP data"""
@@ -588,7 +712,92 @@ class CountAbnormalCellFor3G:
             import traceback
             traceback.print_exc()
 
-    def export_summary_to_excel(self, summary_table, abnormal_cells_df=None, output_path='rtwp_summary.xlsx'):
+    def export_summary_table_as_image(self, summary_table, output_path='rtwp_summary_table.png'):
+        """Export summary table as PNG image"""
+        if summary_table is None or summary_table.empty:
+            print("No data to export as image")
+            return
+
+        try:
+            # Prepare data for display
+            display_df = summary_table.copy()
+
+            # Limit rows for better visibility
+            max_rows = 50
+            if len(display_df) > max_rows:
+                display_df = display_df.head(max_rows)
+                print(f"Note: Showing first {max_rows} rows out of {len(summary_table)} total rows")
+
+            # Create figure
+            fig, ax = plt.subplots(figsize=(20, min(12, len(display_df) * 0.5 + 2)))
+            ax.axis('tight')
+            ax.axis('off')
+
+            # Prepare table data
+            table_data = []
+            headers = list(display_df.columns)
+
+            # Add data rows
+            for idx, row in display_df.iterrows():
+                table_data.append([str(val) for val in row.values])
+
+            # Create table
+            table = ax.table(cellText=table_data,
+                             colLabels=headers,
+                             cellLoc='center',
+                             loc='center',
+                             colWidths=[0.08 if col not in ['Date'] else 0.12 for col in headers])
+
+            # Style the table
+            table.auto_set_font_size(False)
+            table.set_fontsize(8)
+            table.scale(1.2, 1.5)
+
+            # Color header
+            for i in range(len(headers)):
+                table[(0, i)].set_facecolor('#4CAF50')
+                table[(0, i)].set_text_props(weight='bold', color='white')
+
+            # Color Grand Total column if exists
+            if 'Grand Total' in headers:
+                gt_idx = headers.index('Grand Total')
+                for i in range(1, len(table_data) + 1):
+                    table[(i, gt_idx)].set_facecolor('#FFE5B4')
+                    table[(i, gt_idx)].set_text_props(weight='bold')
+
+            # Highlight Ha Noi column if exists
+            if 'Ha Noi' in headers:
+                hn_idx = headers.index('Ha Noi')
+                for i in range(1, len(table_data) + 1):
+                    table[(i, hn_idx)].set_facecolor('#E6F3FF')
+
+            # Alternate row colors
+            for i in range(1, len(table_data) + 1):
+                if i % 2 == 0:
+                    for j in range(len(headers)):
+                        if headers[j] not in ['Grand Total', 'Ha Noi']:
+                            table[(i, j)].set_facecolor('#F0F0F0')
+
+            # Add title
+            plt.title('RTWP Abnormal Cells Summary Table\n(Count of cells with RTWP > -95 dBm by Province and Hour)',
+                      fontsize=14, fontweight='bold', pad=20)
+
+            # Add date range subtitle
+            date_range = f"Date Range: {summary_table['Date'].min()} to {summary_table['Date'].max()}"
+            total_cells = summary_table['Grand Total'].sum() if 'Grand Total' in summary_table.columns else 0
+            subtitle = f"{date_range} | Total Cells: {int(total_cells)}"
+            plt.text(0.5, 0.95, subtitle, transform=fig.transFigure,
+                     ha='center', fontsize=10, style='italic')
+
+            # Save figure
+            plt.savefig(output_path, dpi=300, bbox_inches='tight', pad_inches=0.5)
+            print(f"\nSummary table saved as image: {output_path}")
+            plt.close()
+
+        except Exception as e:
+            print(f"Error exporting summary table as image: {e}")
+            import traceback
+            traceback.print_exc()
         """Export summary table and detailed data to Excel with formatting"""
         if summary_table is None or summary_table.empty:
             print("No data to export")
@@ -685,6 +894,13 @@ class CountAbnormalCellFor3G:
                     f.write(f"   - Province: {row['Province']}\n")
                     f.write(f"   - Average RTWP: {row['RTWP']:.2f} dBm\n")
 
+                # Province distribution
+                f.write("\n5. PROVINCE DISTRIBUTION\n")
+                f.write("-" * 40 + "\n")
+                province_dist = abnormal_cells_df.groupby('Province')['Cell'].nunique().sort_values(ascending=False)
+                for province, count in province_dist.items():
+                    f.write(f"{province}: {count} cells\n")
+
                 f.write("\n" + "=" * 80 + "\n")
                 f.write("END OF REPORT\n")
                 f.write("=" * 80 + "\n")
@@ -716,14 +932,12 @@ def main():
             # Convert Excel to CSV
             df = processor.clean_excel_to_csv_ZTE(excel_file, csv_file)
             if df is not None and processor.verify_csv_structure(csv_file):
-                # Count abnormal cells
-                abnormal_cells = processor.count_abnormal_cells_by_province(
-                    csv_file, vendor='zte', rtwp_threshold=-95
-                )
+                # Count abnormal cells using ZTE-specific function
+                abnormal_cells = processor.count_abnormal_cells_zte(csv_file, rtwp_threshold=-95)
                 if abnormal_cells is not None and not abnormal_cells.empty:
                     all_abnormal_cells.append(abnormal_cells)
         else:
-            print(f"⚠ Warning: File not found: {excel_file}")
+            print(f"Warning: File not found: {excel_file}")
 
     # Process Ericsson files
     print("\n[STEP 2] Processing Ericsson Files...")
@@ -733,14 +947,12 @@ def main():
             # Convert Excel to CSV
             df = processor.clean_excel_to_csv_ericsson(excel_file, csv_file)
             if df is not None and processor.verify_csv_structure(csv_file):
-                # Count abnormal cells
-                abnormal_cells = processor.count_abnormal_cells_by_province(
-                    csv_file, vendor='ericsson', rtwp_threshold=-95
-                )
+                # Count abnormal cells using Ericsson-specific function
+                abnormal_cells = processor.count_abnormal_cells_ericsson(csv_file, rtwp_threshold=-95)
                 if abnormal_cells is not None and not abnormal_cells.empty:
                     all_abnormal_cells.append(abnormal_cells)
         else:
-            print(f"⚠ Warning: File not found: {excel_file}")
+            print(f"Warning: File not found: {excel_file}")
 
     # Combine all results
     if all_abnormal_cells:
@@ -748,7 +960,8 @@ def main():
         print("-" * 40)
 
         combined_df = pd.concat(all_abnormal_cells, ignore_index=True)
-        print(f"✓ Total abnormal cells found: {len(combined_df)}")
+        print(f"Total abnormal records found: {len(combined_df)}")
+        print(f"Unique cells: {combined_df['Cell'].nunique()}")
 
         # Create summary table
         print("\n[STEP 4] Creating Summary Table...")
@@ -756,14 +969,19 @@ def main():
 
         if summary_table is not None:
             # Display first few rows
-            print("\n📊 Summary Table Preview (first 5 rows):")
-            print(summary_table.head(5))
+            print("\nSummary Table Preview (first 10 rows):")
+            print(summary_table.head(10))
+
+            # Check for Ha Noi specifically
+            if 'Ha Noi' in summary_table.columns:
+                ha_noi_total = summary_table['Ha Noi'].sum()
+                print(f"\n*** Ha Noi Total Cells: {int(ha_noi_total)} ***")
 
             # Analyze patterns
             print("\n[STEP 5] Analyzing Patterns...")
             patterns = processor.analyze_rtwp_patterns(combined_df)
             if patterns:
-                print("\n🔍 Pattern Analysis:")
+                print("\nPattern Analysis:")
                 if patterns.get('daily_pattern'):
                     print(f"  • Peak Day: {patterns['daily_pattern'].get('peak_day', 'N/A')} "
                           f"({patterns['daily_pattern'].get('peak_count', 0)} cells)")
@@ -776,33 +994,43 @@ def main():
                         top_severity = list(patterns['province_severity'].values())[0]
                         print(f"  • Most Severe Province: {top_province} ({top_severity:.2f} dBm)")
 
-            # Export to Excel with all sheets
-            print("\n[STEP 6] Exporting to Excel...")
+            # Export summary table as PNG image
+            print("\n[STEP 6] Exporting Summary Table as Image...")
+            processor.export_summary_table_as_image(summary_table, 'rtwp_summary_table.png')
+
+            # Export to Excel (for reference)
+            print("\n[STEP 7] Exporting to Excel...")
             processor.export_summary_to_excel(
                 summary_table,
                 abnormal_cells_df=combined_df,
-                output_path='rtwp_complete_analysis.xlsx'
+                output_path='rtwp_analysis_data.xlsx'
             )
 
             # Generate detailed text report
-            print("\n[STEP 7] Generating Detailed Report...")
+            print("\n[STEP 8] Generating Detailed Report...")
             processor.generate_detailed_report(combined_df, 'rtwp_analysis_report.txt')
 
             # Create visualization
-            print("\n[STEP 8] Creating Visualizations...")
+            print("\n[STEP 9] Creating Visualizations...")
             processor.plot_top_provinces(summary_table, top_n=4, save_path='rtwp_trend_chart.png')
 
             # Final statistics
             print("\n" + "=" * 80)
-            print("📈 ANALYSIS COMPLETE - SUMMARY STATISTICS")
+            print("ANALYSIS COMPLETE - SUMMARY STATISTICS")
             print("=" * 80)
-            print(f"📅 Date Range: {combined_df['Date'].min()} to {combined_df['Date'].max()}")
-            print(f"🌍 Provinces Affected: {combined_df['Province'].nunique()}")
-            print(f"📡 Unique Cells with Issues: {combined_df['Cell'].nunique()}")
-            print(f"📊 Total Abnormal Readings: {len(combined_df)}")
+            print(f"Date Range: {combined_df['Date'].min()} to {combined_df['Date'].max()}")
+            print(f"Provinces Affected: {combined_df['Province'].nunique()}")
+            print(f"Unique Cells with Issues: {combined_df['Cell'].nunique()}")
+            print(f"Total Abnormal Readings: {len(combined_df)}")
+
+            # Province breakdown
+            print("\nProvince Breakdown:")
+            province_counts = combined_df.groupby('Province')['Cell'].nunique().sort_values(ascending=False)
+            for province, count in province_counts.head(10).items():
+                print(f"  {province}: {count} cells")
 
             # Top 5 worst cells
-            print("\n🚨 Top 5 Critical Cells (Highest Average RTWP):")
+            print("\nTop 5 Critical Cells (Highest Average RTWP):")
             worst_cells = combined_df.groupby('Cell').agg({
                 'RTWP': 'mean',
                 'Province': 'first'
@@ -811,15 +1039,16 @@ def main():
             for idx, (cell, row) in enumerate(worst_cells.iterrows(), 1):
                 print(f"   {idx}. {cell} ({row['Province']}): {row['RTWP']:.2f} dBm")
 
-            print("\n✅ Output Files Generated:")
-            print("   1. rtwp_complete_analysis.xlsx - Complete Excel analysis with multiple sheets")
-            print("   2. rtwp_analysis_report.txt - Detailed text report")
-            print("   3. rtwp_trend_chart.png - Trend visualization chart")
-            print("   4. RTWP_3G_Ericsson.csv - Cleaned Ericsson data")
-            print("   5. RTWP_3G_ZTE.csv - Cleaned ZTE data")
+            print("\nOutput Files Generated:")
+            print("   1. rtwp_summary_table.png - Summary table as image")
+            print("   2. rtwp_analysis_data.xlsx - Complete Excel analysis")
+            print("   3. rtwp_analysis_report.txt - Detailed text report")
+            print("   4. rtwp_trend_chart.png - Trend visualization chart")
+            print("   5. RTWP_3G_Ericsson.csv - Cleaned Ericsson data")
+            print("   6. RTWP_3G_ZTE.csv - Cleaned ZTE data")
 
     else:
-        print("\n❌ No abnormal cells found in any files")
+        print("\nNo abnormal cells found in any files")
         print("Possible reasons:")
         print("  1. No cells have RTWP > -95 dBm")
         print("  2. Cell names don't match the province mapping")
