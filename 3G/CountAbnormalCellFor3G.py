@@ -8,6 +8,11 @@ import matplotlib.dates as mdates
 from matplotlib.patches import Rectangle
 import seaborn as sns
 from matplotlib.table import Table
+from reportlab.lib.pagesizes import A3
+from reportlab.pdfgen import canvas
+from reportlab.lib.units import inch
+from PIL import Image
+from datetime import datetime
 
 # Set style for better looking plots
 plt.style.use('default')
@@ -469,84 +474,84 @@ class CountAbnormalCellFor3G:
         except Exception as e:
             print(f"Error exporting to Excel: {e}")
 
-    def export_summary_table_as_image(self, summary_table, output_path='rtwp_summary_table.png'):
-        """Export summary table as PNG image"""
-        if summary_table is None or summary_table.empty:
-            print("No data to export")
-            return
-
-        try:
-            # Prepare data for display
-            display_df = summary_table.copy()
-
-            # Limit rows for better visibility (show first 30 rows)
-            if len(display_df) > 30:
-                display_df = display_df.head(30)
-                print(f"Note: Showing first 30 rows out of {len(summary_table)} total rows")
-
-            # Create figure
-            fig, ax = plt.subplots(figsize=(20, 12))
-            ax.axis('tight')
-            ax.axis('off')
-
-            # Create table
-            table_data = []
-
-            # Add headers
-            headers = list(display_df.columns)
-            table_data.append(headers)
-
-            # Add data rows
-            for idx, row in display_df.iterrows():
-                table_data.append([str(val) for val in row.values])
-
-            # Create table
-            table = ax.table(cellText=table_data[1:],
-                             colLabels=table_data[0],
-                             cellLoc='center',
-                             loc='center',
-                             colWidths=[0.08] * len(headers))
-
-            # Style the table
-            table.auto_set_font_size(False)
-            table.set_fontsize(8)
-            table.scale(1.2, 1.5)
-
-            # Color header
-            for i in range(len(headers)):
-                table[(0, i)].set_facecolor('#4CAF50')
-                table[(0, i)].set_text_props(weight='bold', color='white')
-
-            # Color Grand Total column
-            if 'Grand Total' in headers:
-                gt_idx = headers.index('Grand Total')
-                for i in range(1, len(table_data)):
-                    table[(i, gt_idx)].set_facecolor('#FFE5B4')
-                    table[(i, gt_idx)].set_text_props(weight='bold')
-
-            # Alternate row colors
-            for i in range(1, len(table_data)):
-                if i % 2 == 0:
-                    for j in range(len(headers)):
-                        if headers[j] != 'Grand Total':
-                            table[(i, j)].set_facecolor('#F0F0F0')
-
-            # Add title
-            plt.title('RTWP Abnormal Cells Summary Table\n(Count of cells with RTWP > -95 dBm by Province and Hour)',
-                      fontsize=14, fontweight='bold', pad=20)
-
-            # Add subtitle with date range
-            date_range = f"Date Range: {summary_table['Date'].min()} to {summary_table['Date'].max()}"
-            plt.text(0.5, 0.95, date_range, transform=fig.transFigure,
-                     ha='center', fontsize=10, style='italic')
-
-            # Save figure
-            plt.savefig(output_path, dpi=300, bbox_inches='tight', pad_inches=0.5)
-            print(f"\nSummary table saved as image: {output_path}")
-            plt.close()
-
-        except Exception as e:
-            print(f"Error exporting summary table as image: {e}")
+    # def export_summary_table_as_image(self, summary_table, output_path='rtwp_summary_table.png'):
+    #     """Export summary table as PNG image"""
+    #     if summary_table is None or summary_table.empty:
+    #         print("No data to export")
+    #         return
+    #
+    #     try:
+    #         # Prepare data for display
+    #         display_df = summary_table.copy()
+    #
+    #         # Limit rows for better visibility (show first 30 rows)
+    #         if len(display_df) > 30:
+    #             display_df = display_df.head(30)
+    #             print(f"Note: Showing first 30 rows out of {len(summary_table)} total rows")
+    #
+    #         # Create figure
+    #         fig, ax = plt.subplots(figsize=(20, 12))
+    #         ax.axis('tight')
+    #         ax.axis('off')
+    #
+    #         # Create table
+    #         table_data = []
+    #
+    #         # Add headers
+    #         headers = list(display_df.columns)
+    #         table_data.append(headers)
+    #
+    #         # Add data rows
+    #         for idx, row in display_df.iterrows():
+    #             table_data.append([str(val) for val in row.values])
+    #
+    #         # Create table
+    #         table = ax.table(cellText=table_data[1:],
+    #                          colLabels=table_data[0],
+    #                          cellLoc='center',
+    #                          loc='center',
+    #                          colWidths=[0.08] * len(headers))
+    #
+    #         # Style the table
+    #         table.auto_set_font_size(False)
+    #         table.set_fontsize(8)
+    #         table.scale(1.2, 1.5)
+    #
+    #         # Color header
+    #         for i in range(len(headers)):
+    #             table[(0, i)].set_facecolor('#4CAF50')
+    #             table[(0, i)].set_text_props(weight='bold', color='white')
+    #
+    #         # Color Grand Total column
+    #         if 'Grand Total' in headers:
+    #             gt_idx = headers.index('Grand Total')
+    #             for i in range(1, len(table_data)):
+    #                 table[(i, gt_idx)].set_facecolor('#FFE5B4')
+    #                 table[(i, gt_idx)].set_text_props(weight='bold')
+    #
+    #         # Alternate row colors
+    #         for i in range(1, len(table_data)):
+    #             if i % 2 == 0:
+    #                 for j in range(len(headers)):
+    #                     if headers[j] != 'Grand Total':
+    #                         table[(i, j)].set_facecolor('#F0F0F0')
+    #
+    #         # Add title
+    #         plt.title('RTWP Abnormal Cells Summary Table\n(Count of cells with RTWP > -95 dBm by Province and Hour)',
+    #                   fontsize=14, fontweight='bold', pad=20)
+    #
+    #         # Add subtitle with date range
+    #         date_range = f"Date Range: {summary_table['Date'].min()} to {summary_table['Date'].max()}"
+    #         plt.text(0.5, 0.95, date_range, transform=fig.transFigure,
+    #                  ha='center', fontsize=10, style='italic')
+    #
+    #         # Save figure
+    #         plt.savefig(output_path, dpi=300, bbox_inches='tight', pad_inches=0.5)
+    #         print(f"\nSummary table saved as image: {output_path}")
+    #         plt.close()
+    #
+    #     except Exception as e:
+    #         print(f"Error exporting summary table as image: {e}")
 
     def analyze_rtwp_patterns(self, abnormal_cells_df):
         """Analyze patterns in RTWP data"""
@@ -712,7 +717,7 @@ class CountAbnormalCellFor3G:
             import traceback
             traceback.print_exc()
 
-    def export_summary_table_as_image(self, summary_table, output_path='rtwp_summary_table.png'):
+    def export_summary_table_as_image(self, summary_table, output_path='rtwp_summary_table.png', abnormal_cells_df=None):
         """Export summary table as PNG image"""
         if summary_table is None or summary_table.empty:
             print("No data to export as image")
@@ -723,10 +728,10 @@ class CountAbnormalCellFor3G:
             display_df = summary_table.copy()
 
             # Limit rows for better visibility
-            max_rows = 50
-            if len(display_df) > max_rows:
-                display_df = display_df.head(max_rows)
-                print(f"Note: Showing first {max_rows} rows out of {len(summary_table)} total rows")
+            # max_rows = 169
+            # if len(display_df) > max_rows:
+            #     display_df = display_df.head(max_rows)
+            #     print(f"Note: Showing first {max_rows} rows out of {len(summary_table)} total rows")
 
             # Create figure
             fig, ax = plt.subplots(figsize=(20, min(12, len(display_df) * 0.5 + 2)))
@@ -779,15 +784,15 @@ class CountAbnormalCellFor3G:
                             table[(i, j)].set_facecolor('#F0F0F0')
 
             # Add title
-            plt.title('RTWP Abnormal Cells Summary Table\n(Count of cells with RTWP > -95 dBm by Province and Hour)',
-                      fontsize=14, fontweight='bold', pad=20)
+            # plt.title('RTWP Abnormal Cells Summary Table\n(Count of cells with RTWP > -95 dBm by Province and Hour)',
+            #           fontsize=14, fontweight='bold', pad=20)
 
             # Add date range subtitle
-            date_range = f"Date Range: {summary_table['Date'].min()} to {summary_table['Date'].max()}"
-            total_cells = summary_table['Grand Total'].sum() if 'Grand Total' in summary_table.columns else 0
-            subtitle = f"{date_range} | Total Cells: {int(total_cells)}"
-            plt.text(0.5, 0.95, subtitle, transform=fig.transFigure,
-                     ha='center', fontsize=10, style='italic')
+            # date_range = f"Date Range: {summary_table['Date'].min()} to {summary_table['Date'].max()}"
+            # total_cells = summary_table['Grand Total'].sum() if 'Grand Total' in summary_table.columns else 0
+            # subtitle = f"{date_range} | Total Cells: {int(total_cells)}"
+            # plt.text(0.5, 0.95, subtitle, transform=fig.transFigure,
+            #          ha='center', fontsize=10, style='italic')
 
             # Save figure
             plt.savefig(output_path, dpi=300, bbox_inches='tight', pad_inches=0.5)
@@ -910,6 +915,126 @@ class CountAbnormalCellFor3G:
         except Exception as e:
             print(f"Error generating report: {e}")
 
+    def create_pdf_from_images(self,image1_path, image2_path, output_pdf_path):
+        """
+        Tạo file PDF từ 2 ảnh với tiêu đề và thời gian tạo
+
+        Args:
+            image1_path (str): Đường dẫn đến ảnh thứ nhất
+            image2_path (str): Đường dẫn đến ảnh thứ hai
+            output_pdf_path (str): Đường dẫn file PDF output
+        """
+        # Kiểm tra file ảnh có tồn tại không
+        if not os.path.exists(image1_path):
+            raise FileNotFoundError(f"Không tìm thấy ảnh: {image1_path}")
+        if not os.path.exists(image2_path):
+            raise FileNotFoundError(f"Không tìm thấy ảnh: {image2_path}")
+
+            # Tạo canvas PDF với khổ A3 dọc
+        c = canvas.Canvas(output_pdf_path, pagesize=A3)
+        width, height = A3  # A3: 842 x 1191 points
+
+        print(f"Kích thước trang A3: {width:.0f} x {height:.0f} points")
+
+        # Lấy thời gian hiện tại
+        current_time = datetime.now()
+        date_str = current_time.strftime("%d/%m/%Y")
+        time_str = current_time.strftime("%H:%M:%S")
+
+        # Vẽ tiêu đề
+        c.setFont("Helvetica-Bold", 20)
+        title = "Count Abnormal Cell For 3G"
+        title_width = c.stringWidth(title, "Helvetica-Bold", 20)
+        c.drawString((width - title_width) / 2, height - 35, title)
+
+        # Vẽ ngày tháng và giờ
+        c.setFont("Helvetica", 14)
+        datetime_text = f"{date_str} - {time_str}"
+        datetime_width = c.stringWidth(datetime_text, "Helvetica", 14)
+        c.drawString((width - datetime_width) / 2, height - 60, datetime_text)
+
+        # Tính toán không gian có sẵn - margin siêu tối thiểu để giãn tối đa
+        top_margin = 75  # Sau tiêu đề và ngày tháng
+        bottom_margin = 5  # Margin dưới siêu tối thiểu
+        side_margin = 5  # Margin trái/phải siêu tối thiểu
+        gap_between_images = 10  # Khoảng cách giữa 2 ảnh tối thiểu
+
+        available_height = height - top_margin - bottom_margin - gap_between_images
+        available_width = width - (side_margin * 2)
+
+        print(f"Không gian khả dụng: {available_width:.0f} x {available_height:.0f}")
+
+        # Mở và phân tích ảnh
+        img1 = Image.open(image1_path)
+        img2 = Image.open(image2_path)
+
+        img1_aspect = img1.width / img1.height
+        img2_aspect = img2.width / img2.height
+
+        print(f"Ảnh 1 (bảng): {img1.width} x {img1.height}, tỷ lệ: {img1_aspect:.2f}")
+        print(f"Ảnh 2 (biểu đồ): {img2.width} x {img2.height}, tỷ lệ: {img2_aspect:.2f}")
+
+        # CHIẾN LƯỢC: Kéo giãn cả 2 ảnh ra toàn bộ chiều rộng
+        # Mỗi ảnh sẽ có chiều rộng = available_width
+
+        # Tính chiều cao cho ảnh 1 khi kéo giãn toàn bộ chiều rộng
+        img1_width = available_width
+        img1_height = img1_width / img1_aspect
+
+        # Tính chiều cao cho ảnh 2 khi kéo giãn toàn bộ chiều rộng
+        img2_width = available_width
+        img2_height = img2_width / img2_aspect
+
+        # Kiểm tra tổng chiều cao có vượt quá không gian không
+        total_images_height = img1_height + img2_height
+
+        if total_images_height > available_height:
+            # Nếu vượt quá, cần điều chỉnh tỷ lệ
+            scale_factor = available_height / total_images_height
+
+            img1_height = img1_height * scale_factor
+            img1_width = img1_height * img1_aspect
+
+            img2_height = img2_height * scale_factor
+            img2_width = img2_height * img2_aspect
+
+            print(f"Điều chỉnh tỷ lệ: {scale_factor:.3f}")
+        else:
+            print("Không cần điều chỉnh tỷ lệ - đủ không gian")
+
+        # Tính vị trí ảnh 1 (ảnh trên)
+        img1_x = (width - img1_width) / 2
+        img1_y = height - top_margin - img1_height
+
+        # Tính vị trí ảnh 2 (ảnh dưới)
+        img2_x = (width - img2_width) / 2
+        img2_y = img1_y - gap_between_images - img2_height
+
+        # Vẽ ảnh 1 (bảng tóm tắt)
+        c.drawImage(image1_path, img1_x, img1_y, img1_width, img1_height)
+
+        # Vẽ ảnh 2 (biểu đồ)
+        c.drawImage(image2_path, img2_x, img2_y, img2_width, img2_height)
+
+        # Lưu PDF
+        c.save()
+
+        # Thông tin chi tiết
+        print(f"PDF A3 đã được tạo thành công: {output_pdf_path}")
+        print(f"Kích thước ảnh bảng tóm tắt: {img1_width:.0f} x {img1_height:.0f}")
+        print(f"Kích thước ảnh biểu đồ: {img2_width:.0f} x {img2_height:.0f}")
+
+        # Tính tỷ lệ sử dụng không gian
+        total_page_area = width * height
+        used_area = (img1_width * img1_height) + (img2_width * img2_height)
+        usage_percentage = (used_area / total_page_area) * 100
+
+        print(f"Tỷ lệ sử dụng không gian trang:")
+        print(f"  - Ảnh bảng tóm tắt: {(img1_width * img1_height) / total_page_area * 100:.1f}%")
+        print(f"  - Ảnh biểu đồ: {(img2_width * img2_height) / total_page_area * 100:.1f}%")
+        print(f"  - Tổng cộng: {usage_percentage:.1f}%")
+        print(f"  - Chiều rộng sử dụng: {max(img1_width, img2_width) / width * 100:.1f}% của trang")
+
 
 def main():
     processor = CountAbnormalCellFor3G()
@@ -996,14 +1121,14 @@ def main():
 
             # Export summary table as PNG image
             print("\n[STEP 6] Exporting Summary Table as Image...")
-            processor.export_summary_table_as_image(summary_table, 'rtwp_summary_table.png')
+            processor.export_summary_table_as_image(summary_table, 'rtwp_summary_table.png',combined_df)
 
             # Export to Excel (for reference)
             print("\n[STEP 7] Exporting to Excel...")
             processor.export_summary_to_excel(
                 summary_table,
-                abnormal_cells_df=combined_df,
-                output_path='rtwp_analysis_data.xlsx'
+                combined_df,
+               'rtwp_analysis_data.xlsx'
             )
 
             # Generate detailed text report
@@ -1058,6 +1183,16 @@ def main():
         print("  - Cell names start with codes like U124, U125, etc.")
         print("  - RTWP values are in dBm format")
 
+    try:
+        processor.create_pdf_from_images(
+            image1_path= 'rtwp_summary_table.png' ,
+            image2_path= 'rtwp_trend_chart.png' ,
+            output_pdf_path= 'rtwp_analysis_report.pdf'
+        )
+    except FileNotFoundError as e:
+        print(f"Lỗi: {e}")
+    except Exception as e:
+        print(f"Có lỗi xảy ra: {e}")
     print("\n" + "=" * 80)
     print("PROCESSING COMPLETE - Thank you for using RTWP Analysis System")
     print("=" * 80)

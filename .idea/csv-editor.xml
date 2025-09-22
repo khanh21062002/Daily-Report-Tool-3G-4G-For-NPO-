@@ -31,20 +31,6 @@
             </Attribute>
           </value>
         </entry>
-        <entry key="\3G\RTWP_3G_Ericsson.csv">
-          <value>
-            <Attribute>
-              <option name="separator" value="," />
-            </Attribute>
-          </value>
-        </entry>
-        <entry key="\3G\RTWP_3G_ZTE.csv">
-          <value>
-            <Attribute>
-              <option name="separator" value="," />
-            </Attribute>
-          </value>
-        </entry>
       </map>
     </option>
   </component>

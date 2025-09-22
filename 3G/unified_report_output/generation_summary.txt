@@ -1,0 +1,53 @@
+3G NETWORK PERFORMANCE REPORT - GENERATION SUMMARY
+============================================================
+
+Generated on: 2025-09-19 11:59:06
+Total images processed: 8
+PDF Report: 3G_Comprehensive_Report_20250919_115859.pdf
+
+GENERATED IMAGES:
+------------------------------
+1. RTWP Summary Table
+   File: rtwp_summary_table.png
+   Size: 2075.8 KB
+
+2. RTWP Trend Analysis
+   File: rtwp_trend_chart.png
+   Size: 629.1 KB
+
+3. Ericsson KPI Dashboard
+   File: Daily_3G_KPI_Dashboard_of_Ericsson.png
+   Size: 470.4 KB
+
+4. ZTE KPI Dashboard
+   File: Daily_3G_KPI_Dashboard_of_ZTE.png
+   Size: 471.5 KB
+
+5. 3G KPI Dashboard (BH)
+   File: 3G_KPI_Dashboard_BH_20250918.png
+   Size: 817.8 KB
+
+6. 3G KPI Dashboard (BH)
+   File: 3G_KPI_Dashboard_BH_20250919.png
+   Size: 817.8 KB
+
+7. 3G KPI Dashboard (24h)
+   File: 3G_KPI_Dashboard_24h_20250918.png
+   Size: 792.8 KB
+
+8. 3G KPI Dashboard (24h)
+   File: 3G_KPI_Dashboard_24h_20250919.png
+   Size: 792.8 KB
+
+PROCESSING MODULES:
+------------------------------
+1. CountAbnormalCellFor3G.py - RTWP Analysis
+2. DataVisualizationFor3G.py - Individual Dashboards
+3. 3GKPIDashboardByRNC.py - RNC Dashboards
+
+OUTPUT STRUCTURE:
+------------------------------
+Main output directory: unified_report_output/
+├── 3G_Comprehensive_Report_YYYYMMDD_HHMMSS.pdf
+├── generation_summary.txt
+└── [Generated PNG files]
