@@ -8,12 +8,14 @@ from datetime import datetime, timedelta
 import os
 import glob
 import warnings
+import re
 
 warnings.filterwarnings('ignore')
 plt.rcParams['font.family'] = ['DejaVu Sans', 'Arial', 'sans-serif']
 plt.rcParams['axes.unicode_minus'] = False
 plt.style.use('default')
 sns.set_palette("husl")
+
 
 class Enhanced3GDashboard:
     def __init__(self, csv_folder_path=None, csv_files_list=None):
@@ -26,6 +28,7 @@ class Enhanced3GDashboard:
         self.df_combined = pd.DataFrame()
         self.ericsson_data = pd.DataFrame()
         self.zte_data = pd.DataFrame()
+        self.data_date = None  # Store the data date for naming output files
 
         if csv_folder_path:
             self.load_csv_from_folder(csv_folder_path)
@@ -33,6 +36,53 @@ class Enhanced3GDashboard:
             self.load_csv_from_list(csv_files_list)
 
         self.prepare_data()
+
+    def find_excel_files_by_pattern(self, directory="."):
+        """
+        Find Excel files based on patterns
+        Returns dict with file types and their paths
+        """
+        file_patterns = {
+            'ericsson_bh': r'3G_RNO_KPIs_BH_scheduled.*\.xlsx$',
+            'ericsson_wd': r'3G_RNO_KPIs_WD_scheduled.*\.xlsx$',
+            'zte_bh': r'3G_RNO_KPIs_BH.*ZTE.*\.xlsx$',
+            'zte_wd': r'3G_RNO_KPIs_WD.*ZTE.*\.xlsx$'
+        }
+
+        found_files = {}
+        all_files = os.listdir(directory)
+
+        for file_type, pattern in file_patterns.items():
+            matching_files = [f for f in all_files if re.match(pattern, f, re.IGNORECASE)]
+            if matching_files:
+                # Take the most recent file if multiple matches
+                matching_files.sort(reverse=True)
+                found_files[file_type] = os.path.join(directory, matching_files[0])
+                print(f"Found {file_type}: {matching_files[0]}")
+            else:
+                print(f"No file found for pattern {file_type}: {pattern}")
+
+        return found_files
+
+    def extract_date_from_filename(self, filename):
+        """Extract date from filename"""
+        # Look for date pattern YYYY-MM-DD in filename
+        date_match = re.search(r'(\d{4}-\d{2}-\d{2})', filename)
+        if date_match:
+            try:
+                return datetime.strptime(date_match.group(1), '%Y-%m-%d').date()
+            except:
+                pass
+
+        # Look for date pattern YYYYMMDD in filename
+        date_match = re.search(r'(\d{8})', filename)
+        if date_match:
+            try:
+                return datetime.strptime(date_match.group(1), '%Y%m%d').date()
+            except:
+                pass
+
+        return datetime.now().date()
 
     def load_csv_from_folder(self, folder_path):
         """Load all CSV files from a folder"""
@@ -50,6 +100,10 @@ class Enhanced3GDashboard:
 
                 # Add file source information
                 df['Source_File'] = os.path.basename(file_path)
+
+                # Extract date from filename for output naming
+                if self.data_date is None:
+                    self.data_date = self.extract_date_from_filename(file_path)
 
                 # Determine vendor based on filename or columns
                 if 'ZTE' in file_path.upper() or any('_VNM' in col for col in df.columns):
@@ -128,6 +182,10 @@ class Enhanced3GDashboard:
 
         self.target_dates = [self.latest_date, self.second_latest_date, self.week_ago_date]
         print(f"Target dates: {[d.strftime('%Y-%m-%d') for d in self.target_dates]}")
+
+        # Update data_date to latest date if not set
+        if self.data_date is None:
+            self.data_date = self.latest_date.date()
 
     def get_kpi_mapping_ericsson(self):
         """Map Ericsson KPI columns"""
@@ -369,6 +427,7 @@ class Enhanced3GDashboard:
             diff = ((current_val - previous_val) / (100 - current_val)) * 100
 
         return diff
+
     def calculate_delta_d_7(self, current_val, previous_val, kpi_name=None):
         if pd.isna(current_val) or pd.isna(previous_val) or previous_val == 0:
             return 0
@@ -384,7 +443,7 @@ class Enhanced3GDashboard:
     def get_color_for_delta(self, delta, kpi_name=""):
         """Get color based on delta value and KPI type"""
         temp = delta / 100
-        if temp >= -0.3 and temp < 0.3  :  # Minimal change
+        if temp >= -0.3 and temp < 0.3:  # Minimal change
             return '#FFFF99'  # Light yellow
 
         # For CDR (Call Drop Rate), lower is better
@@ -414,22 +473,23 @@ class Enhanced3GDashboard:
     def get_delta_text_color(self, delta, kpi_name=""):
         temp = delta / 100
         """Get text color for delta based on delta value and KPI type"""
-        if temp >= -0.3 and temp < 0.3 :  # Minimal change
-            return '#000000'  # Màu đen cho mũi tên ngang
+        if temp >= -0.3 and temp < 0.3:  # Minimal change
+            return '#000000'  # Black for horizontal arrow
 
         # For CDR (Call Drop Rate), lower is better
         is_lower_better = 'CDR' in kpi_name
 
         if is_lower_better:
-            if temp >= 0.3:  # Improvement (decrease in CDR) - màu xanh lá
-                return '#2E7D32'  # Xanh lá đậm
-            else:  # Degradation (increase in CDR) - màu đỏ
-                return '#C62828'  # Đỏ đậm
+            if temp >= 0.3:  # Improvement (decrease in CDR) - green
+                return '#2E7D32'  # Dark green
+            else:  # Degradation (increase in CDR) - red
+                return '#C62828'  # Dark red
         else:
-            if temp >= 0.3:  # Improvement - màu xanh lá
-                return '#2E7D32'  # Xanh lá đậm
-            else:  # Degradation - màu đỏ
-                return '#C62828'  # Đỏ đậm
+            if temp >= 0.3:  # Improvement - green
+                return '#2E7D32'  # Dark green
+            else:  # Degradation - red
+                return '#C62828'  # Dark red
+
     def create_dashboard(self, title="Daily 3G KPI Dashboard", time_period="BH", save_path=None):
         """Create the combined dashboard"""
         if self.df_combined.empty:
@@ -471,6 +531,11 @@ class Enhanced3GDashboard:
 
         plt.tight_layout()
         plt.subplots_adjust(top=0.94)  # Leave more space for title
+
+        # Generate filename with data date if save_path not provided
+        if save_path is None and self.data_date:
+            date_str = self.data_date.strftime('%Y-%m-%d')
+            save_path = f"3G_KPI_Dashboard_{time_period}_{date_str}.png"
 
         # Save as PNG if path provided
         if save_path:
@@ -557,8 +622,6 @@ class Enhanced3GDashboard:
         latest_values, second_values, week_values = date_data
 
         # Calculate deltas
-        # delta_d1_values = [self.calculate_delta(latest_values[i], second_values[i]) for i in range(len(latest_values))]
-        # delta_d7_values = [self.calculate_delta(latest_values[i], week_values[i]) for i in range(len(latest_values))]
         delta_d1_values = [self.calculate_delta_d_1(latest_values[i], second_values[i], kpi_name) for i in
                            range(len(latest_values))]
         delta_d7_values = [self.calculate_delta_d_7(latest_values[i], week_values[i], kpi_name) for i in
@@ -608,7 +671,7 @@ class Enhanced3GDashboard:
                                cell_width, cell_height, y, row_type):
         """Create a single data row with improved delta styling"""
 
-        # Row label với light gray background
+        # Row label with light gray background
         clean_label = str(row_label).strip()
         rect = patches.Rectangle((0, y), cell_width, cell_height,
                                  linewidth=1, edgecolor='black', facecolor='#F5F5F5')
@@ -624,7 +687,7 @@ class Enhanced3GDashboard:
                 bg_color = self.get_color_for_delta(value, kpi_name)
                 text_color = self.get_delta_text_color(value, kpi_name)
                 display_text = self.format_delta(value)
-                font_weight = 'bold'  # Font chữ nét đậm cho delta
+                font_weight = 'bold'  # Bold font for delta
             else:
                 bg_color = '#FFFFFF'  # White background for data cells
                 text_color = 'black'
@@ -652,72 +715,72 @@ class Enhanced3GDashboard:
                     ha='center', va='center', fontsize=10, color=text_color,
                     fontweight=font_weight, fontfamily='Arial')
 
-    def create_data_row_with_kpi(self, ax, row_label, data_values, kpi_name, all_rncs,
-                                 cell_width, cell_height, y, row_type, show_kpi=False):
-        """Create a single data row with merged KPI column"""
-
-        # Row label
-        rect = patches.Rectangle((0, y), cell_width, cell_height,
-                                 linewidth=1, edgecolor='black', facecolor='lightgray')
-        ax.add_patch(rect)
-        ax.text(cell_width / 2, y + cell_height / 2, row_label, ha='center', va='center', fontsize=9)
-
-        # Data cells
-        for i, value in enumerate(data_values):
-            x = (i + 1) * cell_width
-
-            if row_type == 'delta':
-                color = self.get_color_for_delta(value, kpi_name)
-                display_text = self.format_delta(value)
-            else:
-                color = 'white'
-                if pd.isna(value):
-                    display_text = "N/A"
-                elif 'CDR' in kpi_name:
-                    display_text = f"{value:.2f}"
-                elif 'Traffic' in kpi_name:
-                    if 'CS' in kpi_name:
-                        display_text = f"{value:.2f}"
-                    else:
-                        display_text = f"{value:.0f}"
-                else:
-                    display_text = f"{value:.2f}"
-
-            rect = patches.Rectangle((x, y), cell_width, cell_height,
-                                     linewidth=1, edgecolor='black', facecolor=color)
-            ax.add_patch(rect)
-            ax.text(x + cell_width / 2, y + cell_height / 2, display_text,
-                    ha='center', va='center', fontsize=8)
-
-        # KPI name cell - only show for the first row of each KPI group
-        x = (len(all_rncs) + 1) * cell_width
-        if show_kpi:
-            color = 'lightblue'
-            text = kpi_name
-            fontweight = 'bold'
-        else:
-            color = 'lightgray'
-            text = ""
-            fontweight = 'normal'
-
-        rect = patches.Rectangle((x, y), cell_width, cell_height,
-                                 linewidth=1, edgecolor='black', facecolor=color)
-        ax.add_patch(rect)
-        if text:
-            ax.text(x + cell_width / 2, y + cell_height / 2, text,
-                    ha='center', va='center', fontsize=9, fontweight=fontweight)
-
 
 # Main functions for easy usage
+def find_and_create_dashboard_from_patterns(directory=".", title="Daily 3G KPI Dashboard", time_period="BH",
+                                            save_png=True):
+    """Find CSV files by patterns and create dashboard"""
+    try:
+        # Find CSV files based on patterns
+        csv_patterns = {
+            'ericsson_bh': r'3G_RNO_KPIs_BH_scheduled.*\.csv',
+            'ericsson_wd': r'3G_RNO_KPIs_WD_scheduled.*\.csv',
+            'zte_bh': r'3G_RNO_KPIs_BH.*ZTE.*\.csv',
+            'zte_wd': r'3G_RNO_KPIs_WD.*ZTE.*\.csv'
+        }
+
+        found_csvs = {}
+        all_files = os.listdir(directory)
+
+        for file_type, pattern in csv_patterns.items():
+            matching_files = [f for f in all_files if re.match(pattern, f, re.IGNORECASE)]
+            if matching_files:
+                matching_files.sort(reverse=True)  # Get most recent
+                found_csvs[file_type] = os.path.join(directory, matching_files[0])
+                print(f"Found {file_type}: {matching_files[0]}")
+
+        # Select appropriate files based on time_period
+        csv_files_list = []
+        if time_period.upper() == "BH":
+            if 'ericsson_bh' in found_csvs:
+                csv_files_list.append(found_csvs['ericsson_bh'])
+            if 'zte_bh' in found_csvs:
+                csv_files_list.append(found_csvs['zte_bh'])
+        else:  # WD/24h
+            if 'ericsson_wd' in found_csvs:
+                csv_files_list.append(found_csvs['ericsson_wd'])
+            if 'zte_wd' in found_csvs:
+                csv_files_list.append(found_csvs['zte_wd'])
+
+        if not csv_files_list:
+            print(f"No CSV files found for time period: {time_period}")
+            return None
+
+        # Create dashboard
+        dashboard = Enhanced3GDashboard(csv_files_list=csv_files_list)
+
+        save_path = None
+        if save_png and dashboard.data_date:
+            date_str = dashboard.data_date.strftime('%Y-%m-%d')
+            save_path = f"3G_KPI_Dashboard_{time_period}_{date_str}.png"
+
+        fig = dashboard.create_dashboard(title=title, time_period=time_period, save_path=save_path)
+        return fig
+
+    except Exception as e:
+        print(f"Error creating dashboard: {str(e)}")
+        return None
+
+
 def create_dashboard_from_folder(folder_path, title="Daily 3G KPI Dashboard", time_period="BH", save_png=True):
     """Create dashboard from all CSV files in a folder"""
     try:
         dashboard = Enhanced3GDashboard(csv_folder_path=folder_path)
 
         save_path = None
-        if save_png:
-            save_path = os.path.join(folder_path,
-                                     f"3G_KPI_Dashboard_{time_period}_{datetime.now().strftime('%Y%m%d')}.png")
+        if save_png and dashboard.data_date:
+            date_str = dashboard.data_date.strftime('%Y-%m-%d')
+            save_path = os.path.join(folder_path, f"3G_KPI_Dashboard_{time_period}_{date_str}.png")
 
         fig = dashboard.create_dashboard(title=title, time_period=time_period, save_path=save_path)
         return fig
@@ -734,9 +797,9 @@ def create_dashboard_from_files(csv_files_list, title="Daily 3G KPI Dashboard", 
         dashboard = Enhanced3GDashboard(csv_files_list=csv_files_list)
 
         save_path = None
-        if save_png:
-            save_path = os.path.join(output_dir,
-                                     f"3G_KPI_Dashboard_{time_period}_{datetime.now().strftime('%Y%m%d')}.png")
+        if save_png and dashboard.data_date:
+            date_str = dashboard.data_date.strftime('%Y-%m-%d')
+            save_path = os.path.join(output_dir, f"3G_KPI_Dashboard_{time_period}_{date_str}.png")
 
         fig = dashboard.create_dashboard(title=title, time_period=time_period, save_path=save_path)
         return fig
@@ -748,22 +811,25 @@ def create_dashboard_from_files(csv_files_list, title="Daily 3G KPI Dashboard", 
 
 # Example usage
 if __name__ == "__main__":
-    # Method 1: Load from folder
-    # folder_path = "path/to/your/csv/folder"
-    # create_dashboard_from_folder(folder_path, "Daily 3G KPI Dashboard", "BH", save_png=True)
+    # Method 1: Auto-find files by pattern and create dashboards
+    print("Creating BH Dashboard...")
+    find_and_create_dashboard_from_patterns(".", "Daily 3G KPI Dashboard by RNC", "BH", save_png=True)
 
-    # Method 2: Load specific files
-    csv_files = [
-        "3G_RNO_KPIs_BH_scheduled2025-08-06.csv",
-        "3G_RNO_KPIs_BH_ZTE_2025-08-06.csv",
-        "3G_RNO_KPIs_WD_scheduled2025-08-06.csv",
-        "3G_RNO_KPIs_WD_ZTE_2025-08-06.csv"
-    ]
+    print("\nCreating 24h Dashboard...")
+    find_and_create_dashboard_from_patterns(".", "Daily 3G KPI Dashboard by RNC", "24h", save_png=True)
 
-    # Create BH dashboard
-    create_dashboard_from_files([f for f in csv_files if 'BH' in f],
-                                "Daily 3G KPI Dashboard by RNC", "BH", save_png=True)
-
-    # Create WD (24h) dashboard
-    create_dashboard_from_files([f for f in csv_files if 'WD' in f],
-                                "Daily 3G KPI Dashboard by RNC", "24h", save_png=True)
+    # Method 2: Manual file specification (fallback)
+    # csv_files = [
+    #     "3G_RNO_KPIs_BH_scheduled2025-08-06.csv",
+    #     "3G_RNO_KPIs_BH_ZTE_2025-08-06.csv",
+    #     "3G_RNO_KPIs_WD_scheduled2025-08-06.csv",
+    #     "3G_RNO_KPIs_WD_ZTE_2025-08-06.csv"
+    # ]
+    #
+    # # Create BH dashboard
+    # create_dashboard_from_files([f for f in csv_files if 'BH' in f],
+    #                             "Daily 3G KPI Dashboard by RNC", "BH", save_png=True)
+    #
+    # # Create WD (24h) dashboard
+    # create_dashboard_from_files([f for f in csv_files if 'WD' in f],
+    #                             "Daily 3G KPI Dashboard by RNC", "24h", save_png=True)

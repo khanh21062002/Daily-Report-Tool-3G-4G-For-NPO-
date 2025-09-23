@@ -1,508 +1,675 @@
 import os
 import sys
+import glob
+import re
+from datetime import datetime, timedelta
 import subprocess
-import importlib.util
-from datetime import datetime
-from reportlab.lib.pagesizes import A3
-from reportlab.pdfgen import canvas
-from PIL import Image
 import shutil
+from pathlib import Path
+import pandas as pd
+from reportlab.lib.pagesizes import A4, A3
+from reportlab.pdfgen import canvas
+from reportlab.lib.units import inch
+from PIL import Image
+import importlib.util
 
 
-class Unified3GReportSystem:
-    def __init__(self):
-        self.output_dir = "unified_report_output"
-        self.temp_dirs = {
-            'rtwp': 'temp_rtwp',
-            'dashboard': 'temp_dashboard',
-            'rnc': 'temp_rnc'
+class Daily3GReportGenerator:
+    def __init__(self, target_date=None):
+        """
+        Initialize the Daily 3G Report Generator
+
+        Args:
+            target_date: Target date for report (YYYY-MM-DD format). If None, uses today.
+        """
+        self.target_date = target_date if target_date else datetime.now().strftime('%Y-%m-%d')
+        self.timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        self.report_dir = f"3G_Daily_Report_{self.target_date}"
+        self.output_images = []
+
+        # Create report directory
+        os.makedirs(self.report_dir, exist_ok=True)
+
+        print(f"=== Daily 3G Report Generator ===")
+        print(f"Target Date: {self.target_date}")
+        print(f"Report Directory: {self.report_dir}")
+        print(f"Timestamp: {self.timestamp}")
+
+    def find_excel_files_by_date(self, target_date):
+        """
+        Find Excel files matching the target date pattern
+
+        Args:
+            target_date: Date string in YYYY-MM-DD format
+
+        Returns:
+            dict: Dictionary of found files by type
+        """
+        print(f"\n[STEP 1] Finding Excel files for date: {target_date}")
+        print("-" * 50)
+
+        # Define file patterns with flexible date matching
+        patterns = {
+            'ericsson_bh': [
+                f'3G_RNO_KPIs_BH_scheduled{target_date}.xlsx',
+                f'3G_RNO_KPIs_BH_scheduled_{target_date}.xlsx',
+                f'3G_RNO_KPIs_BH_scheduled*{target_date}*.xlsx'
+            ],
+            'ericsson_wd': [
+                f'3G_RNO_KPIs_WD_scheduled{target_date}.xlsx',
+                f'3G_RNO_KPIs_WD_scheduled_{target_date}.xlsx',
+                f'3G_RNO_KPIs_WD_scheduled*{target_date}*.xlsx'
+            ],
+            'zte_bh': [
+                f'3G_RNO_KPIs_BH_ZTE_{target_date}.xlsx',
+                f'3G_RNO_KPIs_BH*ZTE*{target_date}*.xlsx',
+                f'*ZTE*BH*{target_date}*.xlsx'
+            ],
+            'zte_wd': [
+                f'3G_RNO_KPIs_WD_ZTE_{target_date}.xlsx',
+                f'3G_RNO_KPIs_WD*ZTE*{target_date}*.xlsx',
+                f'*ZTE*WD*{target_date}*.xlsx'
+            ],
+            'rtwp_ericsson': [
+                f'RTWP_3G.xlsx',
+                f'RTWP*3G*.xlsx',
+                f'*RTWP*Ericsson*.xlsx'
+            ],
+            'rtwp_zte': [
+                f'History Performance_UMTS _RNO_Avg_Mean_RTWP.xlsx',
+                f'History*Performance*UMTS*.xlsx',
+                f'*RTWP*ZTE*.xlsx'
+            ]
         }
-        self.expected_images = {
-            'rtwp_summary_table.png': 'RTWP Summary Table',
-            'rtwp_trend_chart.png': 'RTWP Trend Analysis',
-            'Daily_3G_KPI_Dashboard_of_Ericsson.png': 'Ericsson KPI Dashboard',
-            'Daily_3G_KPI_Dashboard_of_ZTE.png': 'ZTE KPI Dashboard'
-        }
 
-        # Pattern để tìm file có tên động
-        self.dynamic_patterns = {
-            '3G_KPI_Dashboard_BH_': '3G KPI Dashboard (BH)',
-            '3G_KPI_Dashboard_24h_': '3G KPI Dashboard (24h)'
-        }
+        found_files = {}
 
-    def setup_directories(self):
-        """Tạo các thư mục cần thiết"""
-        os.makedirs(self.output_dir, exist_ok=True)
-        for temp_dir in self.temp_dirs.values():
-            os.makedirs(temp_dir, exist_ok=True)
+        for file_type, pattern_list in patterns.items():
+            for pattern in pattern_list:
+                matches = glob.glob(pattern)
+                if matches:
+                    # Take the most recent file if multiple matches
+                    matches.sort(key=os.path.getmtime, reverse=True)
+                    found_files[file_type] = matches[0]
+                    print(f"✓ Found {file_type}: {matches[0]}")
+                    break
 
-    def cleanup_directories(self):
-        """Dọn dẹp thư mục tạm"""
-        for temp_dir in self.temp_dirs.values():
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
+            if file_type not in found_files:
+                print(f"✗ Missing {file_type}")
 
-    def run_rtwp_analysis(self):
-        """Chạy CountAbnormalCellFor3G.py"""
-        print("=" * 60)
-        print("STEP 1: Running RTWP Analysis...")
-        print("=" * 60)
+        print(f"\nTotal files found: {len(found_files)}")
+        return found_files
+
+    def load_module_from_file(self, module_name, file_path):
+        """
+        Dynamically load a Python module from file path
+
+        Args:
+            module_name: Name to assign to the module
+            file_path: Path to the Python file
+
+        Returns:
+            module: Loaded module object
+        """
+        spec = importlib.util.spec_from_file_location(module_name, file_path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+        return module
+
+    def run_data_visualization(self):
+        """
+        Execute DataVisualizationFor3G.py
+        """
+        print(f"\n[STEP 2] Running Data Visualization For 3G")
+        print("-" * 50)
 
         try:
-            # Import và chạy CountAbnormalCellFor3G
-            spec = importlib.util.spec_from_file_location("CountAbnormalCellFor3G", "CountAbnormalCellFor3G.py")
-            rtwp_module = importlib.util.module_from_spec(spec)
+            # Load the module
+            viz_module = self.load_module_from_file("DataVisualizationFor3G", "DataVisualizationFor3G.py")
 
-            # Chuyển directory để output vào thư mục tạm
-            original_cwd = os.getcwd()
-            os.chdir(self.temp_dirs['rtwp'])
+            # Create processor instance
+            processor = viz_module.ExcelCSVProcessorFor3G()
 
-            # Copy file dữ liệu cần thiết
-            required_files = [
-                'RTWP_3G.xlsx',
-                'History Performance_UMTS _RNO_Avg_Mean_RTWP.xlsx'
-            ]
+            # Find files by pattern
+            found_files = processor.find_excel_files_by_pattern(".")
 
-            for file in required_files:
-                src_path = os.path.join(original_cwd, file)
-                if os.path.exists(src_path):
-                    shutil.copy2(src_path, file)
+            if not found_files:
+                print("No Excel files found for Data Visualization!")
+                return []
 
-            # Chạy module
-            spec.loader.exec_module(rtwp_module)
-            rtwp_module.main()
+            # Convert files and create dashboards
+            converted_files_zte = {}
+            converted_files_ericsson = {}
 
-            # Quay lại thư mục gốc
-            os.chdir(original_cwd)
+            # Process ZTE files
+            for file_type in ['zte_bh', 'zte_wd']:
+                if file_type in found_files:
+                    excel_file = found_files[file_type]
+                    csv_file = f"3G_RNO_KPIs_{file_type.split('_')[1].upper()}_ZTE_{self.target_date}.csv"
 
-            # Copy kết quả về thư mục output
-            output_files = ['rtwp_summary_table.png', 'rtwp_trend_chart.png']
-            for file in output_files:
-                src = os.path.join(self.temp_dirs['rtwp'], file)
-                dst = os.path.join(self.output_dir, file)
-                if os.path.exists(src):
-                    shutil.copy2(src, dst)
-                    print(f"✓ Generated: {file}")
-                else:
-                    print(f"✗ Missing: {file}")
+                    df = processor.clean_excel_to_csv_ZTE(excel_file, csv_file)
+                    if df is not None:
+                        converted_files_zte[excel_file] = csv_file
 
-            print("RTWP Analysis completed successfully!")
-            return True
+            # Process Ericsson files
+            for file_type in ['ericsson_bh', 'ericsson_wd']:
+                if file_type in found_files:
+                    excel_file = found_files[file_type]
+                    csv_file = f"3G_RNO_KPIs_{file_type.split('_')[1].upper()}_scheduled{self.target_date}.csv"
+
+                    df = processor.clean_excel_to_csv_ericsson(excel_file, csv_file)
+                    if df is not None:
+                        converted_files_ericsson[excel_file] = csv_file
+
+            generated_images = []
+
+            # Create individual vendor dashboards
+            if len(converted_files_ericsson) >= 2:
+                csv_files_ericsson = list(converted_files_ericsson.values())
+                csv_all_day_ericsson = [f for f in csv_files_ericsson if 'WD' in f][0] if any(
+                    'WD' in f for f in csv_files_ericsson) else csv_files_ericsson[0]
+                csv_busy_hour_ericsson = [f for f in csv_files_ericsson if 'BH' in f][0] if any(
+                    'BH' in f for f in csv_files_ericsson) else csv_files_ericsson[1]
+
+                output_dir_ericsson = "output_ericsson"
+                os.makedirs(output_dir_ericsson, exist_ok=True)
+                ericsson_dashboard = processor.create_daily_dashboard_table_ericsson(
+                    csv_all_day_ericsson, csv_busy_hour_ericsson, output_dir_ericsson)
+                if ericsson_dashboard:
+                    generated_images.append(ericsson_dashboard)
+
+            if len(converted_files_zte) >= 2:
+                csv_files_zte = list(converted_files_zte.values())
+                csv_all_day_zte = [f for f in csv_files_zte if 'WD' in f][0] if any(
+                    'WD' in f for f in csv_files_zte) else csv_files_zte[0]
+                csv_busy_hour_zte = [f for f in csv_files_zte if 'BH' in f][0] if any(
+                    'BH' in f for f in csv_files_zte) else csv_files_zte[1]
+
+                output_dir_zte = "output_zte"
+                os.makedirs(output_dir_zte, exist_ok=True)
+                zte_dashboard = processor.create_daily_dashboard_table_ZTE(
+                    csv_all_day_zte, csv_busy_hour_zte, output_dir_zte)
+                if zte_dashboard:
+                    generated_images.append(zte_dashboard)
+
+            # Create RNC dashboards and charts
+            if len(converted_files_ericsson) >= 2 and len(converted_files_zte) >= 2:
+                rnc_output_dir = "output_rnc_dashboards_improved"
+                os.makedirs(rnc_output_dir, exist_ok=True)
+
+                csv_files_ericsson = list(converted_files_ericsson.values())
+                csv_files_zte = list(converted_files_zte.values())
+
+                csv_all_day_ericsson = [f for f in csv_files_ericsson if 'WD' in f][0] if any(
+                    'WD' in f for f in csv_files_ericsson) else csv_files_ericsson[0]
+                csv_bh_ericsson = [f for f in csv_files_ericsson if 'BH' in f][0] if any(
+                    'BH' in f for f in csv_files_ericsson) else csv_files_ericsson[1]
+                csv_all_day_zte = [f for f in csv_files_zte if 'WD' in f][0] if any(
+                    'WD' in f for f in csv_files_zte) else csv_files_zte[0]
+                csv_bh_zte = [f for f in csv_files_zte if 'BH' in f][0] if any('BH' in f for f in csv_files_zte) else \
+                csv_files_zte[1]
+
+                processor.create_daily_rnc_dashboard(
+                    csv_all_day_ericsson=csv_all_day_ericsson,
+                    csv_bh_ericsson=csv_bh_ericsson,
+                    csv_all_day_zte=csv_all_day_zte,
+                    csv_bh_zte=csv_bh_zte,
+                    output_dir=rnc_output_dir
+                )
+
+                # Collect generated images from RNC output directory
+                rnc_images = glob.glob(os.path.join(rnc_output_dir, "*.png"))
+                generated_images.extend(rnc_images)
+
+            print(f"Data Visualization completed. Generated {len(generated_images)} images.")
+            return generated_images
 
         except Exception as e:
-            print(f"Error in RTWP Analysis: {e}")
-            os.chdir(original_cwd)
-            return False
+            print(f"Error in Data Visualization: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
 
-    def run_dashboard_analysis(self):
-        """Chạy DataVisualizationFor3G.py"""
-        print("\n" + "=" * 60)
-        print("STEP 2: Running Dashboard Analysis...")
-        print("=" * 60)
+    def run_kpi_dashboard_by_rnc(self):
+        """
+        Execute 3GKPIDashboardByRNC.py
+        """
+        print(f"\n[STEP 3] Running 3G KPI Dashboard By RNC")
+        print("-" * 50)
 
         try:
-            # Import và chạy DataVisualizationFor3G
-            spec = importlib.util.spec_from_file_location("DataVisualizationFor3G", "DataVisualizationFor3G.py")
-            dashboard_module = importlib.util.module_from_spec(spec)
+            # Load the module
+            kpi_module = self.load_module_from_file("3GKPIDashboardByRNC", "3GKPIDashboardByRNC.py")
 
-            # Chuyển directory
-            original_cwd = os.getcwd()
-            os.chdir(self.temp_dirs['dashboard'])
+            # Use the functions from the module
+            # Try BH dashboard first
+            try:
+                fig_bh = kpi_module.find_and_create_dashboard_from_patterns(".", "Daily 3G KPI Dashboard by RNC", "BH",
+                                                                            save_png=True)
+                bh_image = f"3G_KPI_Dashboard_BH_{self.target_date}.png"
+            except Exception as e:
+                print(f"Error creating BH dashboard: {e}")
+                bh_image = None
 
-            # Copy file dữ liệu cần thiết
-            required_files = [
-                '3G_RNO_KPIs_BH_ZTE_2025-08-06.xlsx',
-                '3G_RNO_KPIs_WD_ZTE_2025-08-06.xlsx',
-                '3G_RNO_KPIs_BH_scheduled2025-08-06.xlsx',
-                '3G_RNO_KPIs_WD_scheduled2025-08-06.xlsx'
-            ]
+            # Try 24h dashboard
+            try:
+                fig_24h = kpi_module.find_and_create_dashboard_from_patterns(".", "Daily 3G KPI Dashboard by RNC",
+                                                                             "24h", save_png=True)
+                h24_image = f"3G_KPI_Dashboard_24h_{self.target_date}.png"
+            except Exception as e:
+                print(f"Error creating 24h dashboard: {e}")
+                h24_image = None
 
-            for file in required_files:
-                src_path = os.path.join(original_cwd, file)
-                if os.path.exists(src_path):
-                    shutil.copy2(src_path, file)
+            generated_images = []
+            if bh_image and os.path.exists(bh_image):
+                generated_images.append(bh_image)
+            if h24_image and os.path.exists(h24_image):
+                generated_images.append(h24_image)
 
-            # Chạy module
-            spec.loader.exec_module(dashboard_module)
-            dashboard_module.main()
-
-            # Quay lại thư mục gốc
-            os.chdir(original_cwd)
-
-            # Copy kết quả về thư mục output
-            output_files = [
-                'output_ericsson/Daily_3G_KPI_Dashboard_of_Ericsson.png',
-                'output_zte/Daily_3G_KPI_Dashboard_of_ZTE.png'
-            ]
-
-            for file_path in output_files:
-                src = os.path.join(self.temp_dirs['dashboard'], file_path)
-                filename = os.path.basename(file_path)
-                dst = os.path.join(self.output_dir, filename)
-                if os.path.exists(src):
-                    shutil.copy2(src, dst)
-                    print(f"✓ Generated: {filename}")
-                else:
-                    print(f"✗ Missing: {filename}")
-
-            print("Dashboard Analysis completed successfully!")
-            return True
+            print(f"KPI Dashboard By RNC completed. Generated {len(generated_images)} images.")
+            return generated_images
 
         except Exception as e:
-            print(f"Error in Dashboard Analysis: {e}")
-            os.chdir(original_cwd)
-            return False
+            print(f"Error in KPI Dashboard By RNC: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
 
-    def run_rnc_dashboard(self):
-        """Chạy 3GKPIDashboardByRNC.py"""
-        print("\n" + "=" * 60)
-        print("STEP 3: Running RNC Dashboard...")
-        print("=" * 60)
+    def run_count_abnormal_cell(self):
+        """
+        Execute CountAbnormalCellFor3G.py
+        """
+        print(f"\n[STEP 4] Running Count Abnormal Cell For 3G")
+        print("-" * 50)
 
         try:
-            # Import và chạy 3GKPIDashboardByRNC
-            spec = importlib.util.spec_from_file_location("3GKPIDashboardByRNC", "3GKPIDashboardByRNC.py")
-            rnc_module = importlib.util.module_from_spec(spec)
+            # Load the module
+            count_module = self.load_module_from_file("CountAbnormalCellFor3G", "CountAbnormalCellFor3G.py")
 
-            # Chuyển directory
-            original_cwd = os.getcwd()
-            os.chdir(self.temp_dirs['rnc'])
+            # Create processor instance
+            processor = count_module.CountAbnormalCellFor3G()
 
-            # Copy file dữ liệu cần thiết
-            required_files = [
-                "3G_RNO_KPIs_BH_scheduled2025-08-06.csv",
-                "3G_RNO_KPIs_BH_ZTE_2025-08-06.csv",
-                "3G_RNO_KPIs_WD_scheduled2025-08-06.csv",
-                "3G_RNO_KPIs_WD_ZTE_2025-08-06.csv"
-            ]
+            # Find required Excel files
+            excel_files_ericsson = {'RTWP_3G.xlsx': 'RTWP_3G_Ericsson.csv'}
+            excel_files_zte = {'History Performance_UMTS _RNO_Avg_Mean_RTWP.xlsx': 'RTWP_3G_ZTE.csv'}
 
-            for file in required_files:
-                src_path = os.path.join(original_cwd, file)
-                if os.path.exists(src_path):
-                    shutil.copy2(src_path, file)
+            all_abnormal_cells = []
 
-            # Chạy module
-            spec.loader.exec_module(rnc_module)
+            # Process ZTE files
+            for excel_file, csv_file in excel_files_zte.items():
+                if os.path.exists(excel_file):
+                    df = processor.clean_excel_to_csv_ZTE(excel_file, csv_file)
+                    if df is not None and processor.verify_csv_structure(csv_file):
+                        abnormal_cells = processor.count_abnormal_cells_zte(csv_file, rtwp_threshold=-95)
+                        if abnormal_cells is not None and not abnormal_cells.empty:
+                            all_abnormal_cells.append(abnormal_cells)
 
-            # Tạo dashboard theo cách của module
-            csv_files_bh = [f for f in required_files if 'BH' in f and os.path.exists(f)]
-            csv_files_24h = [f for f in required_files if 'WD' in f and os.path.exists(f)]
+            # Process Ericsson files
+            for excel_file, csv_file in excel_files_ericsson.items():
+                if os.path.exists(excel_file):
+                    df = processor.clean_excel_to_csv_ericsson(excel_file, csv_file)
+                    if df is not None and processor.verify_csv_structure(csv_file):
+                        abnormal_cells = processor.count_abnormal_cells_ericsson(csv_file, rtwp_threshold=-95)
+                        if abnormal_cells is not None and not abnormal_cells.empty:
+                            all_abnormal_cells.append(abnormal_cells)
 
-            if csv_files_bh:
-                rnc_module.create_dashboard_from_files(csv_files_bh, "Daily 3G KPI Dashboard by RNC", "BH",
-                                                       save_png=True)
+            generated_images = []
 
-            if csv_files_24h:
-                rnc_module.create_dashboard_from_files(csv_files_24h, "Daily 3G KPI Dashboard by RNC", "24h",
-                                                       save_png=True)
+            if all_abnormal_cells:
+                combined_df = pd.concat(all_abnormal_cells, ignore_index=True)
 
-            # Quay lại thư mục gốc
-            os.chdir(original_cwd)
+                # Create summary table
+                summary_table = processor.create_summary_table(combined_df)
 
-            # Copy kết quả về thư mục output (tìm file có pattern phù hợp)
-            import glob
+                if summary_table is not None:
+                    # Export summary table as image
+                    table_image = 'rtwp_summary_table.png'
+                    processor.export_summary_table_as_image(summary_table, table_image, combined_df)
+                    if os.path.exists(table_image):
+                        generated_images.append(table_image)
 
-            # Tìm file dashboard được tạo
-            pattern_files = [
-                f"{self.temp_dirs['rnc']}/3G_KPI_Dashboard_*_*.png"
-            ]
+                    # Export to Excel
+                    processor.export_summary_to_excel(summary_table, combined_df, 'rtwp_analysis_data.xlsx')
 
-            for pattern in pattern_files:
-                found_files = glob.glob(pattern)
-                for src in found_files:
-                    filename = os.path.basename(src)
-                    dst = os.path.join(self.output_dir, filename)
-                    shutil.copy2(src, dst)
-                    print(f"✓ Generated: {filename}")
+                    # Generate detailed report
+                    processor.generate_detailed_report(combined_df, 'rtwp_analysis_report.txt')
 
-            print("RNC Dashboard completed successfully!")
-            return True
+                    # Create visualization
+                    chart_image = 'rtwp_trend_chart.png'
+                    processor.plot_top_provinces(summary_table, top_n=4, save_path=chart_image)
+                    if os.path.exists(chart_image):
+                        generated_images.append(chart_image)
+
+                    # Create PDF from images
+                    try:
+                        processor.create_pdf_from_images(
+                            image1_path=table_image,
+                            image2_path=chart_image,
+                            output_pdf_path='rtwp_analysis_report.pdf'
+                        )
+                    except Exception as e:
+                        print(f"Error creating RTWP PDF: {e}")
+
+            print(f"Count Abnormal Cell completed. Generated {len(generated_images)} images.")
+            return generated_images
 
         except Exception as e:
-            print(f"Error in RNC Dashboard: {e}")
-            os.chdir(original_cwd)
-            return False
+            print(f"Error in Count Abnormal Cell: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
 
-    def find_generated_images(self):
-        """Tìm tất cả ảnh đã được tạo ra, bao gồm cả file có tên động"""
-        generated_images = []
+    def collect_all_images(self):
+        """
+        Collect all generated PNG images from all processes
+        """
+        print(f"\n[STEP 5] Collecting all generated images")
+        print("-" * 50)
 
-        for filename in os.listdir(self.output_dir):
-            if filename.endswith('.png'):
-                filepath = os.path.join(self.output_dir, filename)
-                if os.path.exists(filepath):
-                    # Xác định title cho file
-                    title = self._get_image_title(filename)
+        # Define search patterns for images
+        image_patterns = [
+            "*.png",
+            "output_ericsson/*.png",
+            "output_zte/*.png",
+            "output_rnc_dashboards_improved/*.png",
+            "3G_KPI_Dashboard_*.png",
+            "rtwp_*.png"
+        ]
 
-                    generated_images.append({
-                        'path': filepath,
-                        'filename': filename,
-                        'title': title
-                    })
+        all_images = []
+        for pattern in image_patterns:
+            matches = glob.glob(pattern)
+            all_images.extend(matches)
 
-        # Sắp xếp theo độ ưu tiên
-        def get_priority(image):
-            filename = image['filename']
+        # Remove duplicates and filter only existing files
+        unique_images = []
+        seen = set()
+        for img in all_images:
+            if img not in seen and os.path.exists(img):
+                unique_images.append(img)
+                seen.add(img)
 
-            # Priority cố định
-            priority_order = [
-                'rtwp_summary_table.png',
-                'rtwp_trend_chart.png',
-                'Daily_3G_KPI_Dashboard_of_Ericsson.png',
-                'Daily_3G_KPI_Dashboard_of_ZTE.png'
-            ]
+        print(f"Found {len(unique_images)} unique images:")
+        for img in unique_images:
+            print(f"  - {img}")
 
-            if filename in priority_order:
-                return priority_order.index(filename)
+        return unique_images
 
-            # Priority cho file động
-            if filename.startswith('3G_KPI_Dashboard_BH_'):
-                return len(priority_order)  # Đặt sau file cố định
-            elif filename.startswith('3G_KPI_Dashboard_24h_'):
-                return len(priority_order) + 1
+    def create_comprehensive_pdf_report(self, image_list):
+        """
+        Create a comprehensive PDF report with all images
 
-            return len(priority_order) + 2  # File khác
+        Args:
+            image_list: List of image file paths
+        """
+        print(f"\n[STEP 6] Creating comprehensive PDF report")
+        print("-" * 50)
 
-        generated_images.sort(key=get_priority)
-        return generated_images
-
-    def _get_image_title(self, filename):
-        """Xác định title cho ảnh dựa trên tên file"""
-        # Kiểm tra file cố định trước
-        if filename in self.expected_images:
-            return self.expected_images[filename]
-
-        # Kiểm tra file có pattern động
-        for pattern, title in self.dynamic_patterns.items():
-            if filename.startswith(pattern):
-                return title
-
-        # Fallback: tạo title từ tên file
-        return filename.replace('.png', '').replace('_', ' ').title()
-
-    def create_multipage_pdf_report(self, images):
-        """Tạo báo cáo PDF nhiều trang"""
-        if not images:
-            print("No images found to create PDF report!")
+        if not image_list:
+            print("No images found for PDF report")
             return None
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        pdf_path = os.path.join(self.output_dir, f"3G_Comprehensive_Report_{timestamp}.pdf")
+        # Create PDF filename with timestamp
+        pdf_filename = f"Daily_3G_Report_{self.target_date}_{self.timestamp}.pdf"
+        pdf_path = os.path.join(self.report_dir, pdf_filename)
 
         try:
+            # Create canvas with A3 page size
             c = canvas.Canvas(pdf_path, pagesize=A3)
             width, height = A3
 
-            print(f"\nCreating comprehensive PDF report: {pdf_path}")
-            print(f"Total images to include: {len(images)}")
+            # Add title page
+            self._create_title_page(c, width, height)
+            c.showPage()
 
-            for i, image_info in enumerate(images, 1):
-                print(f"Processing page {i}: {image_info['filename']}")
-
-                # Tạo trang mới
-                if i > 1:
+            # Add each image as a separate page
+            for i, image_path in enumerate(image_list):
+                try:
+                    print(f"Adding image {i + 1}/{len(image_list)}: {image_path}")
+                    self._add_image_page(c, image_path, width, height, i + 1, len(image_list))
                     c.showPage()
+                except Exception as e:
+                    print(f"Error adding image {image_path}: {e}")
+                    continue
 
-                # Thông tin trang
-                current_time = datetime.now()
-                date_str = current_time.strftime("%d/%m/%Y")
-                time_str = current_time.strftime("%H:%M:%S")
-
-                # Tiêu đề trang
-                c.setFont("Helvetica-Bold", 24)
-                title = "3G Network Performance Report"
-                title_width = c.stringWidth(title, "Helvetica-Bold", 24)
-                c.drawString((width - title_width) / 2, height - 40, title)
-
-                # Thông tin ngày giờ
-                c.setFont("Helvetica", 16)
-                datetime_text = f"{date_str} - {time_str}"
-                datetime_width = c.stringWidth(datetime_text, "Helvetica", 16)
-                c.drawString((width - datetime_width) / 2, height - 70, datetime_text)
-
-                # Tiêu đề ảnh
-                c.setFont("Helvetica-Bold", 18)
-                image_title = image_info['title']
-                title_width = c.stringWidth(image_title, "Helvetica-Bold", 18)
-                c.drawString((width - title_width) / 2, height - 110, image_title)
-
-                # Thông tin trang
-                c.setFont("Helvetica", 12)
-                page_info = f"Page {i} of {len(images)}"
-                c.drawString(width - 100, height - 20, page_info)
-
-                # Vẽ ảnh
-                self.draw_image_on_page(c, image_info['path'], width, height, top_margin=130)
-
-            # Lưu PDF
+            # Save PDF
             c.save()
 
-            print(f"\n✓ PDF Report created successfully: {pdf_path}")
+            print(f"PDF report created successfully: {pdf_path}")
             return pdf_path
 
         except Exception as e:
             print(f"Error creating PDF report: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
-    def draw_image_on_page(self, canvas_obj, image_path, page_width, page_height, top_margin=130):
-        """Vẽ ảnh lên trang PDF với tối ưu kích thước"""
+    def _create_title_page(self, canvas, width, height):
+        """Create title page for PDF report"""
+        current_time = datetime.now()
+
+        # Title
+        canvas.setFont("Helvetica-Bold", 24)
+        title = "Daily 3G Network Performance Report"
+        title_width = canvas.stringWidth(title, "Helvetica-Bold", 24)
+        canvas.drawString((width - title_width) / 2, height - 100, title)
+
+        # Date and time
+        canvas.setFont("Helvetica", 16)
+        date_str = f"Report Date: {self.target_date}"
+        date_width = canvas.stringWidth(date_str, "Helvetica", 16)
+        canvas.drawString((width - date_width) / 2, height - 150, date_str)
+
+        generated_str = f"Generated: {current_time.strftime('%Y-%m-%d %H:%M:%S')}"
+        generated_width = canvas.stringWidth(generated_str, "Helvetica", 16)
+        canvas.drawString((width - generated_width) / 2, height - 180, generated_str)
+
+        # Report sections
+        canvas.setFont("Helvetica-Bold", 14)
+        sections_title = "Report Sections:"
+        canvas.drawString(100, height - 250, sections_title)
+
+        canvas.setFont("Helvetica", 12)
+        sections = [
+            "1. Data Visualization Dashboards",
+            "2. Individual Vendor Performance (Ericsson & ZTE)",
+            "3. RNC-based KPI Analysis",
+            "4. KPI Dashboard by RNC (BH & 24h)",
+            "5. Abnormal Cell Analysis (RTWP)",
+            "6. Trend Analysis and Charts"
+        ]
+
+        y_pos = height - 280
+        for section in sections:
+            canvas.drawString(120, y_pos, section)
+            y_pos -= 25
+
+        # Footer
+        canvas.setFont("Helvetica", 10)
+        footer = "Generated by Daily 3G Report Generator"
+        footer_width = canvas.stringWidth(footer, "Helvetica", 10)
+        canvas.drawString((width - footer_width) / 2, 50, footer)
+
+    def _add_image_page(self, canvas, image_path, width, height, page_num, total_pages):
+        """Add image page to PDF"""
         try:
-            # Mở ảnh để lấy kích thước
+            # Open and analyze image
             img = Image.open(image_path)
             img_width, img_height = img.size
             img_aspect = img_width / img_height
 
-            # Tính toán không gian khả dụng
-            bottom_margin = 20
-            side_margin = 20
+            # Calculate available space (leave margins and space for header/footer)
+            margin = 50
+            header_space = 80
+            footer_space = 30
 
-            available_width = page_width - (side_margin * 2)
-            available_height = page_height - top_margin - bottom_margin
+            available_width = width - (2 * margin)
+            available_height = height - header_space - footer_space - (2 * margin)
 
-            # Tính toán kích thước ảnh tối ưu
-            # Ưu tiên chiều rộng tối đa
-            new_width = available_width
-            new_height = new_width / img_aspect
+            # Calculate image dimensions to fit page
+            if img_aspect > (available_width / available_height):
+                # Image is wider, fit to width
+                final_width = available_width
+                final_height = final_width / img_aspect
+            else:
+                # Image is taller, fit to height
+                final_height = available_height
+                final_width = final_height * img_aspect
 
-            # Nếu chiều cao vượt quá, điều chỉnh theo chiều cao
-            if new_height > available_height:
-                new_height = available_height
-                new_width = new_height * img_aspect
+            # Center the image
+            x = (width - final_width) / 2
+            y = (height - final_height) / 2
 
-            # Vị trí ảnh (căn giữa)
-            x = (page_width - new_width) / 2
-            y = page_height - top_margin - new_height
+            # Add header with image name and page number
+            canvas.setFont("Helvetica-Bold", 12)
+            image_name = os.path.basename(image_path)
+            canvas.drawString(margin, height - 30, f"Image: {image_name}")
 
-            # Vẽ ảnh
-            canvas_obj.drawImage(image_path, x, y, new_width, new_height)
+            page_text = f"Page {page_num} of {total_pages}"
+            page_width = canvas.stringWidth(page_text, "Helvetica-Bold", 12)
+            canvas.drawString(width - margin - page_width, height - 30, page_text)
 
-            print(f"   Image size: {img_width}x{img_height} -> {new_width:.0f}x{new_height:.0f}")
+            # Draw the image
+            canvas.drawImage(image_path, x, y, final_width, final_height)
+
+            # Add footer with timestamp
+            canvas.setFont("Helvetica", 8)
+            footer = f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            footer_width = canvas.stringWidth(footer, "Helvetica", 8)
+            canvas.drawString((width - footer_width) / 2, 20, footer)
 
         except Exception as e:
-            print(f"   Error drawing image {image_path}: {e}")
-            # Vẽ thông báo lỗi thay thế
-            canvas_obj.setFont("Helvetica", 16)
-            canvas_obj.drawString(page_width / 2 - 100, page_height / 2,
-                                  f"Error loading image: {os.path.basename(image_path)}")
+            print(f"Error adding image {image_path}: {e}")
+            # Add error page
+            canvas.setFont("Helvetica", 12)
+            error_text = f"Error loading image: {os.path.basename(image_path)}"
+            canvas.drawString(100, height / 2, error_text)
 
-    def generate_summary_report(self, images, pdf_path):
-        """Tạo báo cáo tóm tắt"""
-        summary_path = os.path.join(self.output_dir, "generation_summary.txt")
+    def cleanup_temporary_files(self):
+        """Clean up temporary files and organize final outputs"""
+        print(f"\n[STEP 7] Organizing output files")
+        print("-" * 50)
 
-        with open(summary_path, 'w', encoding='utf-8') as f:
-            f.write("3G NETWORK PERFORMANCE REPORT - GENERATION SUMMARY\n")
-            f.write("=" * 60 + "\n\n")
+        try:
+            # Copy important images to report directory
+            image_list = self.collect_all_images()
 
-            f.write(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"Total images processed: {len(images)}\n")
-            f.write(f"PDF Report: {os.path.basename(pdf_path) if pdf_path else 'Failed to create'}\n\n")
+            for img in image_list:
+                if os.path.exists(img):
+                    dest_path = os.path.join(self.report_dir, os.path.basename(img))
+                    shutil.copy2(img, dest_path)
 
-            f.write("GENERATED IMAGES:\n")
-            f.write("-" * 30 + "\n")
-            for i, img in enumerate(images, 1):
-                f.write(f"{i}. {img['title']}\n")
-                f.write(f"   File: {img['filename']}\n")
-                f.write(f"   Size: {os.path.getsize(img['path']) / 1024:.1f} KB\n\n")
+            # Copy important data files
+            data_files = [
+                'rtwp_analysis_data.xlsx',
+                'rtwp_analysis_report.txt'
+            ]
 
-            f.write("PROCESSING MODULES:\n")
-            f.write("-" * 30 + "\n")
-            f.write("1. CountAbnormalCellFor3G.py - RTWP Analysis\n")
-            f.write("2. DataVisualizationFor3G.py - Individual Dashboards\n")
-            f.write("3. 3GKPIDashboardByRNC.py - RNC Dashboards\n\n")
+            for data_file in data_files:
+                if os.path.exists(data_file):
+                    dest_path = os.path.join(self.report_dir, data_file)
+                    shutil.copy2(data_file, dest_path)
 
-            f.write("OUTPUT STRUCTURE:\n")
-            f.write("-" * 30 + "\n")
-            f.write(f"Main output directory: {self.output_dir}/\n")
-            f.write("├── 3G_Comprehensive_Report_YYYYMMDD_HHMMSS.pdf\n")
-            f.write("├── generation_summary.txt\n")
-            f.write("└── [Generated PNG files]\n")
+            print(f"Output files organized in: {self.report_dir}")
 
-        print(f"✓ Summary report created: {summary_path}")
+        except Exception as e:
+            print(f"Error organizing files: {e}")
 
-    def run_complete_analysis(self):
-        """Chạy toàn bộ quy trình phân tích"""
-        print("🚀 STARTING 3G COMPREHENSIVE ANALYSIS SYSTEM")
-        print("=" * 80)
+    def generate_full_report(self):
+        """
+        Generate the complete daily 3G report
+        """
+        print(f"\n{'=' * 60}")
+        print(f"STARTING DAILY 3G REPORT GENERATION")
+        print(f"{'=' * 60}")
 
-        # Setup
-        self.setup_directories()
+        # Step 1: Check required files
+        found_files = self.find_excel_files_by_date(self.target_date)
 
-        success_count = 0
+        if len(found_files) < 4:
+            print(f"Warning: Only found {len(found_files)} out of expected 6 files")
+            print("Continuing with available files...")
 
-        # Chạy từng module
-        if self.run_rtwp_analysis():
-            success_count += 1
+        all_images = []
 
-        if self.run_dashboard_analysis():
-            success_count += 1
+        # Step 2: Run Data Visualization
+        viz_images = self.run_data_visualization()
+        all_images.extend(viz_images)
 
-        if self.run_rnc_dashboard():
-            success_count += 1
+        # Step 3: Run KPI Dashboard By RNC
+        kpi_images = self.run_kpi_dashboard_by_rnc()
+        all_images.extend(kpi_images)
 
-        print("\n" + "=" * 80)
-        print("STEP 4: Creating Comprehensive PDF Report...")
-        print("=" * 80)
+        # Step 4: Run Count Abnormal Cell
+        abnormal_images = self.run_count_abnormal_cell()
+        all_images.extend(abnormal_images)
 
-        # Tìm tất cả ảnh đã tạo
-        generated_images = self.find_generated_images()
+        # Step 5: Collect all images
+        final_images = self.collect_all_images()
 
-        if generated_images:
-            print(f"\nFound {len(generated_images)} generated images:")
-            for img in generated_images:
-                print(f"  • {img['filename']} - {img['title']}")
+        # Step 6: Create comprehensive PDF
+        pdf_path = self.create_comprehensive_pdf_report(final_images)
 
-            # Tạo báo cáo PDF
-            pdf_path = self.create_multipage_pdf_report(generated_images)
+        # Step 7: Organize outputs
+        self.cleanup_temporary_files()
 
-            # Tạo báo cáo tóm tắt
-            self.generate_summary_report(generated_images, pdf_path)
+        # Final summary
+        print(f"\n{'=' * 60}")
+        print(f"DAILY 3G REPORT GENERATION COMPLETED")
+        print(f"{'=' * 60}")
+        print(f"Target Date: {self.target_date}")
+        print(f"Total Images Generated: {len(final_images)}")
+        print(f"Report Directory: {self.report_dir}")
+        if pdf_path:
+            print(f"PDF Report: {pdf_path}")
+        print(f"{'=' * 60}")
 
-        else:
-            print("⚠️  No images found to create PDF report!")
-
-        # Cleanup
-        self.cleanup_directories()
-
-        # Kết quả cuối cùng
-        print("\n" + "=" * 80)
-        print("🎉 ANALYSIS COMPLETED!")
-        print("=" * 80)
-        print(f"Modules successfully executed: {success_count}/3")
-        print(f"Generated images: {len(generated_images)}")
-        print(f"Output directory: {os.path.abspath(self.output_dir)}")
-
-        if generated_images:
-            print(f"\n📄 Final PDF Report: {os.path.basename(pdf_path) if pdf_path else 'Creation failed'}")
-
-        return success_count, generated_images, pdf_path
+        return pdf_path
 
 
 def main():
-    """Hàm main để chạy hệ thống"""
+    """
+    Main function to run the Daily 3G Report Generator
+    """
+    import argparse
+
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Generate Daily 3G Network Report')
+    parser.add_argument('--date', '-d', type=str,
+                        help='Target date in YYYY-MM-DD format (default: today)')
+
+    args = parser.parse_args()
+
+    # Use provided date or default to today
+    target_date = args.date if args.date else datetime.now().strftime('%Y-%m-%d')
+
+    # Validate date format
     try:
-        # Khởi tạo hệ thống
-        system = Unified3GReportSystem()
+        datetime.strptime(target_date, '%Y-%m-%d')
+    except ValueError:
+        print("Error: Date must be in YYYY-MM-DD format")
+        return
 
-        # Chạy toàn bộ quy trình
-        success_count, images, pdf_path = system.run_complete_analysis()
+    # Create and run report generator
+    generator = Daily3GReportGenerator(target_date=target_date)
 
-        # Kiểm tra kết quả
-        if success_count >= 1 and images:
-            print(f"\n✅ SUCCESS: Generated comprehensive 3G report with {len(images)} visualizations")
-            if pdf_path:
-                print(f"📋 PDF Report: {pdf_path}")
+    try:
+        pdf_path = generator.generate_full_report()
+
+        if pdf_path and os.path.exists(pdf_path):
+            print(f"\n✓ Report generation successful!")
+            print(f"✓ PDF Report: {pdf_path}")
         else:
-            print(f"\n❌ PARTIAL SUCCESS: Only {success_count}/3 modules completed successfully")
+            print(f"\n✗ Report generation completed but PDF creation failed")
 
-        return success_count >= 1
-
+    except KeyboardInterrupt:
+        print(f"\n\nReport generation interrupted by user")
     except Exception as e:
-        print(f"\n💥 CRITICAL ERROR in main execution: {e}")
+        print(f"\n✗ Error during report generation: {e}")
         import traceback
         traceback.print_exc()
-        return False
 
 
 if __name__ == "__main__":
-    success = main()
-    sys.exit(0 if success else 1)
+    main()

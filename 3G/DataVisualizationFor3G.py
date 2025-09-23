@@ -1,5 +1,5 @@
 import os
-from datetime import timedelta
+from datetime import timedelta, datetime
 import numpy as np
 import pandas as pd
 import csv
@@ -7,6 +7,8 @@ from matplotlib import pyplot as plt
 import matplotlib.dates as mdates
 from matplotlib.patches import Rectangle
 import seaborn as sns
+import glob
+import re
 
 # Set style for better looking plots
 plt.style.use('default')
@@ -16,11 +18,63 @@ sns.set_palette("husl")
 class ExcelCSVProcessorFor3G:
     def __init__(self):
         self.cleaned_data = {}
+        self.data_date = None
         # RNC mapping for different vendors
         self.ericsson_rncs = ['HLRE01', 'HLRE02', 'HLRE03', 'HLRE04']
         self.zte_rncs = ['HNRZ01(101)', 'HNRZ01(102)']
         # Combined RNC list for unified processing
         self.all_rncs = self.ericsson_rncs + ['HNRZ01']  # Simplified HNRZ01 name for display
+
+    # ========== FILE DISCOVERY ==========
+    def find_excel_files_by_pattern(self, directory="."):
+        """
+        Find Excel files based on patterns for 3G KPI analysis
+        """
+        file_patterns = {
+            'ericsson_bh': r'3G_RNO_KPIs_BH_scheduled.*\.xlsx$',
+            'ericsson_wd': r'3G_RNO_KPIs_WD_scheduled.*\.xlsx$',
+            'zte_bh': r'3G_RNO_KPIs_BH.*ZTE.*\.xlsx$',
+            'zte_wd': r'3G_RNO_KPIs_WD.*ZTE.*\.xlsx$'
+        }
+
+        found_files = {}
+        all_files = os.listdir(directory)
+
+        for file_type, pattern in file_patterns.items():
+            matching_files = [f for f in all_files if re.match(pattern, f, re.IGNORECASE)]
+            if matching_files:
+                # Take the most recent file if multiple matches
+                matching_files.sort(reverse=True)
+                found_files[file_type] = os.path.join(directory, matching_files[0])
+                print(f"Found {file_type}: {matching_files[0]}")
+
+                # Extract date from filename for the first found file
+                if self.data_date is None:
+                    self.data_date = self.extract_date_from_filename(matching_files[0])
+            else:
+                print(f"No file found for pattern {file_type}: {pattern}")
+
+        return found_files
+
+    def extract_date_from_filename(self, filename):
+        """Extract date from filename"""
+        # Look for date pattern YYYY-MM-DD in filename
+        date_match = re.search(r'(\d{4}-\d{2}-\d{2})', filename)
+        if date_match:
+            try:
+                return datetime.strptime(date_match.group(1), '%Y-%m-%d').date()
+            except:
+                pass
+
+        # Look for date pattern YYYYMMDD in filename
+        date_match = re.search(r'(\d{8})', filename)
+        if date_match:
+            try:
+                return datetime.strptime(date_match.group(1), '%Y%m%d').date()
+            except:
+                pass
+
+        return datetime.now().date()
 
     # ========== EXCEL TO CSV CONVERSION ==========
     def _find_header_row_generic(self, df, keywords, max_rows=30):
@@ -1395,61 +1449,93 @@ class ExcelCSVProcessorFor3G:
                              'PS Inter-RAT Handover Success Rate (%)'],
             'PS Traffic (GB)': ['PS Traffic (GB)', 'PS Traffic (Gigabytes)', 'PS Traffic']
         }
+
+
 def main():
     processor = ExcelCSVProcessorFor3G()
+
+    print("=" * 80)
+    print("3G DATA VISUALIZATION SYSTEM")
+    print("=" * 80)
+
+    # Step 1: Find Excel files by pattern
+    print("\n[STEP 1] Finding Excel files by pattern...")
+    print("-" * 40)
+    found_files = processor.find_excel_files_by_pattern()
+
+    if not found_files:
+        print("No Excel files found matching the required patterns!")
+        print("Expected patterns:")
+        print("  - Ericsson BH: 3G_RNO_KPIs_BH_scheduled*.xlsx")
+        print("  - Ericsson WD: 3G_RNO_KPIs_WD_scheduled*.xlsx")
+        print("  - ZTE BH: 3G_RNO_KPIs_BH*ZTE*.xlsx")
+        print("  - ZTE WD: 3G_RNO_KPIs_WD*ZTE*.xlsx")
+        return
 
     converted_files_zte = {}
     converted_files_ericsson = {}
 
-    excel_files_zte = {
-        '3G_RNO_KPIs_BH_ZTE_2025-08-06.xlsx': '3G_RNO_KPIs_BH_ZTE_2025-08-06.csv',
-        '3G_RNO_KPIs_WD_ZTE_2025-08-06.xlsx': '3G_RNO_KPIs_WD_ZTE_2025-08-06.csv'
-    }
-    excel_files_ericsson = {
-        '3G_RNO_KPIs_BH_scheduled2025-08-06.xlsx': '3G_RNO_KPIs_BH_scheduled2025-08-06.csv',
-        '3G_RNO_KPIs_WD_scheduled2025-08-06.xlsx': '3G_RNO_KPIs_WD_scheduled2025-08-06.csv'
-    }
+    # Step 2: Convert Excel files to CSV
+    print("\n[STEP 2] Converting Excel files to CSV...")
+    print("-" * 40)
 
-    # Convert Excel files to CSV
-    for excel_file_zte, csv_file_zte in excel_files_zte.items():
-        if os.path.exists(excel_file_zte):
-            df = processor.clean_excel_to_csv_ZTE(excel_file_zte, csv_file_zte)
+    # Process ZTE files
+    for file_type in ['zte_bh', 'zte_wd']:
+        if file_type in found_files:
+            excel_file = found_files[file_type]
+            date_str = processor.data_date.strftime('%Y-%m-%d') if processor.data_date else 'current'
+            csv_file = f"3G_RNO_KPIs_{file_type.split('_')[1].upper()}_ZTE_{date_str}.csv"
+
+            df = processor.clean_excel_to_csv_ZTE(excel_file, csv_file)
             if df is not None:
-                converted_files_zte[excel_file_zte] = csv_file_zte
-                processor.verify_csv_structure(csv_file_zte)
-        else:
-            print(f"Warning: File not found: {excel_file_zte}")
+                converted_files_zte[excel_file] = csv_file
+                processor.verify_csv_structure(csv_file)
 
-    for excel_file_ericsson, csv_file_ericsson in excel_files_ericsson.items():
-        if os.path.exists(excel_file_ericsson):
-            df = processor.clean_excel_to_csv_ericsson(excel_file_ericsson, csv_file_ericsson)
+    # Process Ericsson files
+    for file_type in ['ericsson_bh', 'ericsson_wd']:
+        if file_type in found_files:
+            excel_file = found_files[file_type]
+            date_str = processor.data_date.strftime('%Y-%m-%d') if processor.data_date else 'current'
+            csv_file = f"3G_RNO_KPIs_{file_type.split('_')[1].upper()}_scheduled{date_str}.csv"
+
+            df = processor.clean_excel_to_csv_ericsson(excel_file, csv_file)
             if df is not None:
-                converted_files_ericsson[excel_file_ericsson] = csv_file_ericsson
-                processor.verify_csv_structure(csv_file_ericsson)
-        else:
-            print(f"Warning: File not found: {excel_file_ericsson}")
+                converted_files_ericsson[excel_file] = csv_file
+                processor.verify_csv_structure(csv_file)
 
-    # Create individual vendor dashboards (aggregated data)
+    # Step 3: Create individual vendor dashboards
+    print("\n[STEP 3] Creating Individual Vendor Dashboards...")
+    print("-" * 40)
+
+    # Create Ericsson dashboard
     if len(converted_files_ericsson) >= 2:
         csv_files_ericsson = list(converted_files_ericsson.values())
-        csv_all_day_ericsson = csv_files_ericsson[1]
-        csv_busy_hour_ericsson = csv_files_ericsson[0]
+        csv_all_day_ericsson = [f for f in csv_files_ericsson if 'WD' in f][0] if any(
+            'WD' in f for f in csv_files_ericsson) else csv_files_ericsson[0]
+        csv_busy_hour_ericsson = [f for f in csv_files_ericsson if 'BH' in f][0] if any(
+            'BH' in f for f in csv_files_ericsson) else csv_files_ericsson[1]
+
         output_dir_ericsson = "output_ericsson"
         os.makedirs(output_dir_ericsson, exist_ok=True)
         processor.create_daily_dashboard_table_ericsson(csv_all_day_ericsson, csv_busy_hour_ericsson,
                                                         output_dir_ericsson)
 
+    # Create ZTE dashboard
     if len(converted_files_zte) >= 2:
         csv_files_zte = list(converted_files_zte.values())
-        csv_all_day_zte = csv_files_zte[1]
-        csv_busy_hour_zte = csv_files_zte[0]
+        csv_all_day_zte = [f for f in csv_files_zte if 'WD' in f][0] if any('WD' in f for f in csv_files_zte) else \
+        csv_files_zte[0]
+        csv_busy_hour_zte = [f for f in csv_files_zte if 'BH' in f][0] if any('BH' in f for f in csv_files_zte) else \
+        csv_files_zte[1]
+
         output_dir_zte = "output_zte"
         os.makedirs(output_dir_zte, exist_ok=True)
         processor.create_daily_dashboard_table_ZTE(csv_all_day_zte, csv_busy_hour_zte, output_dir_zte)
 
-    # Create improved RNC dashboards and charts
+    # Step 4: Create improved RNC dashboards and charts
     if len(converted_files_ericsson) >= 2 and len(converted_files_zte) >= 2:
-        print("\nStarting Daily 3G KPI Dashboard By RNC (Improved Version)...")
+        print("\n[STEP 4] Creating Daily 3G KPI Dashboard By RNC...")
+        print("-" * 40)
 
         # Create output directory for RNC dashboards
         rnc_output_dir = "output_rnc_dashboards_improved"
@@ -1500,6 +1586,18 @@ def main():
         print("Completed all dashboards and charts!")
     else:
         print("Warning: Not enough files to create RNC Dashboard. Need at least 2 Ericsson and 2 ZTE files.")
+
+    # Final summary
+    print("\n" + "=" * 80)
+    print("DATA VISUALIZATION COMPLETED!")
+    print("=" * 80)
+    if processor.data_date:
+        print(f"Data Date: {processor.data_date.strftime('%Y-%m-%d')}")
+    print(f"Converted files: {len(converted_files_ericsson) + len(converted_files_zte)}")
+    print("Output directories created:")
+    print("  - output_ericsson/")
+    print("  - output_zte/")
+    print("  - output_rnc_dashboards_improved/")
 
 
 if __name__ == "__main__":
