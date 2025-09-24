@@ -6,11 +6,215 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6 import uic
 import sys
 import os
+import glob
 from datetime import datetime
+import traceback
+
+
+class Report3GWorkerThread(QThread):
+    """Worker thread để xử lý báo cáo 3G không block UI"""
+    progress_update = pyqtSignal(str)
+    finished_report = pyqtSignal(bool, str)
+
+    def __init__(self, target_date, creator, region_name, file_paths):
+        super().__init__()
+        self.target_date = target_date
+        self.creator = creator
+        self.region_name = region_name
+        self.file_paths = file_paths
+
+    def run(self):
+        try:
+            self.progress_update.emit("Đang khởi tạo 3G Report Generator...")
+
+            # Kiểm tra có file được import không
+            if not self.file_paths:
+                error_message = "Không có file nào được import cho báo cáo 3G!\n\nVui lòng import các file cần thiết."
+                self.finished_report.emit(False, error_message)
+                return
+
+            # Import unified_3g_report_system từ thư mục 3G
+            try:
+                # Thêm đường dẫn thư mục 3G vào sys.path
+                current_dir = os.path.dirname(os.path.abspath(__file__))
+                path_3g = os.path.join(current_dir, '3G')
+                if path_3g not in sys.path:
+                    sys.path.insert(0, path_3g)
+
+                import unified_3g_report_system
+                generator_class = unified_3g_report_system.Daily3GReportGenerator
+            except ImportError:
+                # Fallback: load từ file trong thư mục 3G
+                import importlib.util
+                current_dir = os.path.dirname(os.path.abspath(__file__))
+                unified_3g_path = os.path.join(current_dir, '3G', 'unified_3g_report_system.py')
+
+                if not os.path.exists(unified_3g_path):
+                    raise FileNotFoundError(f"Không tìm thấy file unified_3g_report_system.py tại: {unified_3g_path}")
+
+                spec = importlib.util.spec_from_file_location("unified_3g_report_system", unified_3g_path)
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                generator_class = module.Daily3GReportGenerator
+
+            # Tạo output directory với cấu trúc: output_3g_region/YYYY-MM-DD/
+            current_date = datetime.now().strftime("%Y-%m-%d")
+            base_output_dir = f"output_3g_{self.region_name.replace(' ', '_').lower()}"
+            output_dir = os.path.join(base_output_dir, current_date)
+            os.makedirs(output_dir, exist_ok=True)
+
+            print(f"Tạo thư mục output 3G: {output_dir}")
+
+            # Sao chép file đã import vào thư mục làm việc
+            self.progress_update.emit("Đang sao chép file Excel vào thư mục làm việc...")
+            copied_files = []
+            for file_path in self.file_paths:
+                filename = os.path.basename(file_path)
+                dest_path = os.path.join(".", filename)  # Copy vào thư mục hiện tại để tool 3G tìm được
+
+                # Chỉ copy nếu file chưa tồn tại hoặc khác nhau
+                if not os.path.exists(dest_path) or os.path.getmtime(file_path) > os.path.getmtime(dest_path):
+                    import shutil
+                    shutil.copy2(file_path, dest_path)
+                    copied_files.append(dest_path)
+                    print(f"Copied: {filename}")
+
+            # Tạo generator instance
+            generator = generator_class(target_date=self.target_date)
+
+            # Cập nhật report directory để sử dụng structure theo region
+            generator.report_dir = output_dir
+
+            # Step 1: Find Excel files (bây giờ sẽ tìm được các file đã copy)
+            self.progress_update.emit("Đang tìm file Excel...")
+            found_files = generator.find_excel_files_by_date(self.target_date)
+
+            if len(found_files) == 0:
+                # Tạo thông báo lỗi chi tiết hơn
+                imported_files_info = '\n'.join(
+                    [f'• {os.path.basename(f)} [{self._classify_3g_file(f)}]' for f in self.file_paths])
+
+                error_message = f"""Không tìm thấy file Excel 3G phù hợp từ các file đã import!
+
+Files đã import: {len(self.file_paths)}
+{imported_files_info}
+
+Vui lòng đảm bảo các file có tên đúng định dạng:
+
+File Ericsson:
+• 3G_RNO_KPIs_BH_scheduled[date].xlsx (Busy Hour)
+• 3G_RNO_KPIs_WD_scheduled[date].xlsx (24h/WD)
+
+File ZTE:
+• 3G_RNO_KPIs_BH_ZTE_[date].xlsx (Busy Hour)
+• 3G_RNO_KPIs_WD_ZTE_[date].xlsx (24h/WD)
+
+File RTWP:
+• RTWP_3G.xlsx (Ericsson)
+• History Performance_UMTS _RNO_Avg_Mean_RTWP.xlsx (ZTE)
+
+Lưu ý: Tên file cần chứa ngày {self.target_date} hoặc có định dạng chuẩn."""
+                self.finished_report.emit(False, error_message)
+                return
+
+            self.progress_update.emit(f"Tìm thấy {len(found_files)} file Excel phù hợp...")
+
+            # Step 2: Run Data Visualization
+            self.progress_update.emit("Đang chạy Data Visualization...")
+            viz_images = generator.run_data_visualization()
+
+            # Step 3: Run KPI Dashboard By RNC
+            self.progress_update.emit("Đang tạo KPI Dashboard By RNC...")
+            kpi_images = generator.run_kpi_dashboard_by_rnc()
+
+            # Step 4: Run Count Abnormal Cell
+            self.progress_update.emit("Đang phân tích Abnormal Cell...")
+            abnormal_images = generator.run_count_abnormal_cell()
+
+            # Step 5: Collect all images
+            self.progress_update.emit("Đang thu thập tất cả hình ảnh...")
+            final_images = generator.collect_all_images()
+
+            # Step 6: Create PDF report
+            self.progress_update.emit("Đang tạo báo cáo PDF tổng hợp...")
+            pdf_path = generator.create_comprehensive_pdf_report(final_images)
+
+            # Step 7: Organize files
+            self.progress_update.emit("Đang sắp xếp file output...")
+            generator.cleanup_temporary_files()
+
+            # Tính toán thống kê
+            total_found_files = len(found_files)
+            total_images = len(final_images)
+            total_imported_files = len(self.file_paths)
+
+            # Tạo thông báo thành công với thông tin chi tiết
+            imported_files_list = '\n'.join(
+                [f'• {os.path.basename(f)} [{self._classify_3g_file(f)}]' for f in self.file_paths])
+
+            success_msg = f"""Tạo báo cáo 3G {self.region_name} thành công!
+
+Thông tin báo cáo:
+• Loại: Daily 3G Network Report
+• Người tạo: {self.creator}
+• Khu vực: {self.region_name}
+• Ngày tạo: {current_date}
+• Ngày báo cáo: {self.target_date}
+• File đã import: {total_imported_files}
+• File Excel xử lý được: {total_found_files}/6
+• Tổng số hình ảnh: {total_images}
+• Thư mục kết quả: {output_dir}
+• PDF Report: {os.path.basename(pdf_path) if pdf_path else 'Không tạo được'}
+
+Files đã import và sử dụng:
+{imported_files_list}
+
+Bao gồm các phân tích:
+✓ Data Visualization Dashboards
+✓ Individual Vendor Performance (Ericsson & ZTE)  
+✓ RNC-based KPI Analysis
+✓ KPI Dashboard by RNC (BH & 24h)
+✓ Abnormal Cell Analysis (RTWP)
+✓ Trend Analysis and Charts
+
+Kết quả đã được lưu vào thư mục: {output_dir}"""
+
+            self.finished_report.emit(True, success_msg)
+
+        except Exception as e:
+            error_msg = f"Lỗi khi tạo báo cáo 3G: {str(e)}\n\nChi tiết lỗi:\n{traceback.format_exc()}"
+            self.finished_report.emit(False, error_msg)
+
+    def _classify_3g_file(self, file_path):
+        """Phân loại file 3G dựa vào tên"""
+        filename = os.path.basename(file_path).lower()
+
+        if '3g_rno_kpis' in filename:
+            if 'zte' in filename:
+                if 'bh' in filename:
+                    return "3G ZTE BH"
+                elif 'wd' in filename:
+                    return "3G ZTE WD"
+                else:
+                    return "3G ZTE"
+            else:
+                if 'bh' in filename:
+                    return "3G Ericsson BH"
+                elif 'wd' in filename:
+                    return "3G Ericsson WD"
+                else:
+                    return "3G Ericsson"
+        elif 'rtwp' in filename or 'history' in filename:
+            if 'history' in filename:
+                return "RTWP ZTE"
+            else:
+                return "RTWP Ericsson"
+        else:
+            return "Unknown 3G File"
 
 
 class ReportWorkerThread(QThread):
-    """Worker thread để xử lý báo cáo không block UI"""
+    """Worker thread để xử lý báo cáo 4G không block UI"""
     progress_update = pyqtSignal(str)
     finished_report = pyqtSignal(bool, str)
 
@@ -53,7 +257,7 @@ class ReportWorkerThread(QThread):
                     all_day_files.append(file_path)
                 else:
                     # Nếu không xác định được, hỏi người dùng hoặc dựa vào thứ tự
-                    # Ở đây tôi sẽ dựa vào index để phân loại tạm thời
+                    # ở đây tôi sẽ dựa vào index để phân loại tạm thời
                     if len(all_day_files) == 0:
                         all_day_files.append(file_path)
                     else:
@@ -193,10 +397,10 @@ Kết quả đã được lưu vào thư mục: {output_dir}"""
             return success
 
         except ImportError as e:
-            print(f"❌ Lỗi import VoLTE processor: {e}")
+            print(f"⚠ Lỗi import VoLTE processor: {e}")
             return False
         except Exception as e:
-            print(f"❌ Lỗi xử lý VoLTE: {e}")
+            print(f"⚠ Lỗi xử lý VoLTE: {e}")
             return False
 
 
@@ -221,12 +425,22 @@ class FileItemWidget(QWidget):
         self.file_label = QLabel(display_text)
 
         # Màu sắc khác nhau cho từng loại file
-        if file_type == "VoLTE":
+        if "3G" in file_type:
+            if "ZTE" in file_type:
+                bg_color = "#9b59b6"  # Tím cho 3G ZTE
+            else:
+                bg_color = "#2ecc71"  # Xanh lá cho 3G Ericsson
+        elif "RTWP" in file_type:
+            if "ZTE" in file_type:
+                bg_color = "#e67e22"  # Cam đậm cho RTWP ZTE
+            else:
+                bg_color = "#f39c12"  # Cam cho RTWP Ericsson
+        elif file_type == "VoLTE":
             bg_color = "#e74c3c"  # Đỏ cho VoLTE
-        elif file_type == "24H":
-            bg_color = "#3498db"  # Xanh dương cho 24H
-        elif file_type == "BH":
-            bg_color = "#f39c12"  # Cam cho BH
+        elif "4G" in file_type and "24H" in file_type:
+            bg_color = "#3498db"  # Xanh dương cho 4G 24H
+        elif "4G" in file_type and "BH" in file_type:
+            bg_color = "#f39c12"  # Cam cho 4G BH
         else:
             bg_color = "#95a5a6"  # Xám cho Unknown
 
@@ -270,12 +484,36 @@ class FileItemWidget(QWidget):
         """Phân loại file dựa vào tên"""
         filename_lower = filename.lower()
 
-        if 'volte' in filename_lower:
+        # File 3G
+        if '3g_rno_kpis' in filename_lower:
+            if 'zte' in filename_lower:
+                if 'bh' in filename_lower:
+                    return "3G ZTE BH"
+                elif 'wd' in filename_lower:
+                    return "3G ZTE WD"
+                else:
+                    return "3G ZTE"
+            else:
+                if 'bh' in filename_lower:
+                    return "3G Ericsson BH"
+                elif 'wd' in filename_lower:
+                    return "3G Ericsson WD"
+                else:
+                    return "3G Ericsson"
+        # File RTWP
+        elif 'rtwp' in filename_lower or 'history' in filename_lower:
+            if 'history' in filename_lower:
+                return "RTWP ZTE"
+            else:
+                return "RTWP Ericsson"
+        # File VoLTE
+        elif 'volte' in filename_lower:
             return "VoLTE"
+        # File 4G
         elif any(keyword in filename_lower for keyword in ['bh', 'busy_hour', 'busy hour']):
-            return "BH"
+            return "4G BH"
         elif any(keyword in filename_lower for keyword in ['24h', '24hour', 'all_day', 'allday']):
-            return "24H"
+            return "4G 24H"
         else:
             return "Unknown"
 
@@ -329,7 +567,7 @@ class MainWindow(QMainWindow):
             print("✅ Import DataVisualizationVoLTEFor4G thành công!")
 
         except ImportError as e:
-            print(f"❌ Lỗi import modules: {e}")
+            print(f"⚠ Lỗi import modules: {e}")
             self.import_4g_success = False
             self.import_volte_success = False
             self.ExcelCSVProcessor = None
@@ -400,10 +638,6 @@ class MainWindow(QMainWindow):
             background-color: #404040;
             border: 2px solid {};
         """
-
-        # self.lblTitleBac.setText(f"Miền Bắc - {current_date}")
-        # self.lblTitleTrung.setText(f"Miền Trung - {current_date}")
-        # self.lblTitleNam.setText(f"Miền Nam - {current_date}")
 
         self.lblTitleBac.setStyleSheet(title_base_style.format("#4a90e2") + "color: #4a90e2;")
         self.lblTitleTrung.setStyleSheet(title_base_style.format("#ff9f43") + "color: #ff9f43;")
@@ -788,6 +1022,20 @@ class MainWindow(QMainWindow):
             self.show_warning_message("Vui lòng nhập tên người tạo!")
             return
 
+        # Xử lý báo cáo 3G (BÂY GIỜ CẦN FILE)
+        if name == "3G":
+            if not self.file_paths.get(region):
+                self.show_warning_message("Vui lòng import file dữ liệu 3G trước khi tạo báo cáo!")
+                return
+
+            if self.worker_thread and self.worker_thread.isRunning():
+                self.show_warning_message("Đang xử lý báo cáo khác, vui lòng chờ...")
+                return
+
+            self.report_3G(name, creator, region_name, self.file_paths[region])
+            return
+
+        # Với các báo cáo khác, cần kiểm tra file
         if not self.file_paths.get(region):
             self.show_warning_message("Vui lòng chọn ít nhất một file dữ liệu!")
             return
@@ -807,10 +1055,113 @@ class MainWindow(QMainWindow):
             # Xử lý báo cáo 4G thông thường
             if name == "4G":
                 self.report_4G_multi_files(name, creator, region_name, self.file_paths[region])
-            elif name == "3G":
-                self.show_info_message("Chức năng báo cáo 3G đang được phát triển...")
             else:
                 self.show_warning_message("Loại báo cáo không được hỗ trợ!")
+
+    def report_3G(self, name, creator, region_name, file_paths):
+        """Xử lý tạo báo cáo 3G với file import từ bên ngoài"""
+        if self.worker_thread and self.worker_thread.isRunning():
+            self.show_warning_message("Đang xử lý báo cáo khác, vui lòng chờ...")
+            return
+
+        # Kiểm tra có file được import không
+        if not file_paths:
+            self.show_warning_message("Vui lòng import file dữ liệu 3G trước khi tạo báo cáo!")
+            return
+
+        # Kiểm tra file unified_3g_report_system.py trong thư mục 3G
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        unified_3g_path = os.path.join(current_dir, '3G', 'unified_3g_report_system.py')
+
+        if not os.path.exists(unified_3g_path):
+            self.show_warning_message(
+                f"Không tìm thấy file unified_3g_report_system.py!\n"
+                f"Vui lòng đảm bảo file này có tại: 3G/unified_3g_report_system.py"
+            )
+            return
+
+        # Lấy ngày hiện tại làm target date
+        target_date = datetime.now().strftime('%Y-%m-%d')
+
+        # Hiển thị thông tin file sẽ được xử lý
+        file_info = '\n'.join([f'• {os.path.basename(f)}' for f in file_paths])
+        self.show_info_message(f"Sẽ xử lý {len(file_paths)} file(s) cho báo cáo 3G:\n\n{file_info}")
+
+        # Tạo và chạy worker thread cho 3G với file paths
+        self.worker_thread = Report3GWorkerThread(
+            target_date, creator, region_name, file_paths
+        )
+
+        # Kết nối signals
+        self.worker_thread.progress_update.connect(self.show_progress_message)
+        self.worker_thread.finished_report.connect(self.on_report_finished)
+
+        # Bắt đầu xử lý
+        self.worker_thread.start()
+
+        # Vô hiệu hóa nút tạo báo cáo
+        self.set_create_buttons_enabled(False)
+
+    def _check_3g_required_files(self):
+        """Kiểm tra các file 3G cần thiết và trả về danh sách file thiếu"""
+        current_date = datetime.now().strftime('%Y-%m-%d')
+
+        # Danh sách file cần thiết với nhiều pattern khả năng
+        required_patterns = {
+            'Ericsson BH': [
+                f'3G_RNO_KPIs_BH_scheduled{current_date}.xlsx',
+                f'3G_RNO_KPIs_BH_scheduled_{current_date}.xlsx',
+                f'3G_RNO_KPIs_BH_scheduled*{current_date}*.xlsx',
+                '3G_RNO_KPIs_BH_scheduled*.xlsx'
+            ],
+            'Ericsson WD': [
+                f'3G_RNO_KPIs_WD_scheduled{current_date}.xlsx',
+                f'3G_RNO_KPIs_WD_scheduled_{current_date}.xlsx',
+                f'3G_RNO_KPIs_WD_scheduled*{current_date}*.xlsx',
+                '3G_RNO_KPIs_WD_scheduled*.xlsx'
+            ],
+            'ZTE BH': [
+                f'3G_RNO_KPIs_BH_ZTE_{current_date}.xlsx',
+                f'3G_RNO_KPIs_BH*ZTE*{current_date}*.xlsx',
+                f'*ZTE*BH*{current_date}*.xlsx',
+                '*ZTE*BH*.xlsx'
+            ],
+            'ZTE WD': [
+                f'3G_RNO_KPIs_WD_ZTE_{current_date}.xlsx',
+                f'3G_RNO_KPIs_WD*ZTE*{current_date}*.xlsx',
+                f'*ZTE*WD*{current_date}*.xlsx',
+                '*ZTE*WD*.xlsx'
+            ],
+            'RTWP Ericsson': [
+                'RTWP_3G.xlsx',
+                'RTWP*3G*.xlsx',
+                '*RTWP*Ericsson*.xlsx'
+            ],
+            'RTWP ZTE': [
+                'History Performance_UMTS _RNO_Avg_Mean_RTWP.xlsx',
+                'History*Performance*UMTS*.xlsx',
+                '*RTWP*ZTE*.xlsx'
+            ]
+        }
+
+        missing_files = []
+        found_files = []
+
+        for file_type, patterns in required_patterns.items():
+            file_found = False
+            for pattern in patterns:
+                matches = glob.glob(pattern)
+                if matches:
+                    file_found = True
+                    found_files.extend(matches)
+                    break
+
+            if not file_found:
+                # Chỉ thêm pattern đầu tiên (cụ thể nhất) vào danh sách thiếu
+                missing_files.append(f"{file_type}: {patterns[0]}")
+
+        print(f"Found {len(found_files)} 3G files, missing {len(missing_files)} file types")
+        return missing_files
 
     def report_volte(self, name, creator, region_name, file_paths):
         """Xử lý tạo báo cáo VoLTE"""
@@ -892,20 +1243,30 @@ class MainWindow(QMainWindow):
             import re
 
             # Tìm đường dẫn thư mục từ message với pattern mới
-            output_match = re.search(r'output_[^/\s]+[/\\]\d{4}-\d{2}-\d{2}', message)
-            if not output_match:
-                # Fallback to old pattern
-                output_match = re.search(r'output_[^/\s]+', message)
+            output_patterns = [
+                r'output_3g_[^/\s]+[/\\]\d{4}-\d{2}-\d{2}',  # Pattern cho 3G
+                r'3G_Daily_Report_\d{4}-\d{2}-\d{2}',  # Pattern cho 3G report directory
+                r'output_[^/\s]+[/\\]\d{4}-\d{2}-\d{2}',  # Pattern chung
+                r'output_[^/\s]+'  # Fallback pattern
+            ]
 
-            if output_match:
-                output_dir = output_match.group()
+            output_dir = None
+            for pattern in output_patterns:
+                output_match = re.search(pattern, message)
+                if output_match:
+                    output_dir = output_match.group()
+                    break
 
+            if output_dir and os.path.exists(output_dir):
                 if platform.system() == "Windows":
                     subprocess.Popen(f'explorer "{os.path.abspath(output_dir)}"')
                 elif platform.system() == "Darwin":  # macOS
                     subprocess.Popen(["open", output_dir])
                 else:  # Linux
                     subprocess.Popen(["xdg-open", output_dir])
+            else:
+                self.show_info_message("Không tìm thấy thư mục kết quả để mở.")
+
         except Exception as e:
             print(f"Không thể mở thư mục: {e}")
 

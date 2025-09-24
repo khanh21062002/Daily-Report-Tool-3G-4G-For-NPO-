@@ -58,11 +58,10 @@ data_files += [('4G/DataVisualizationFor4G_V2.py', '4G')]
 data_files += [('4G/DataVisualizationVoLTEFor4G.py', '4G')]
 
 # Add 3G folder if exists
-if os.path.exists('3G'):
-    for root, dirs, files in os.walk('3G'):
-        for file in files:
-            if file.endswith('.py'):
-                data_files += [(os.path.join(root, file), root)]
+data_files += [('3G/DataVisualizationFor3G.py', '3G')]
+data_files += [('3G/3GKPIDashboardByRNC.py', '3G')]
+data_files += [('3G/CountAbnormalCellFor3G.py', '3G')]
+data_files += [('3G/unified_3g_report_system.py', '3G')]
 
 block_cipher = None
 
@@ -91,7 +90,29 @@ a = Analysis(
         'sys',
         'math',
         're',
-        'warnings'
+        'warnings',
+        'reportlab',
+        'reportlab.lib',
+        'reportlab.pdfgen',
+        'reportlab.platypus',
+        'reportlab.lib.pagesizes',
+        'reportlab.lib.styles',
+        'reportlab.lib.units',
+        'reportlab.lib.enums',
+        'reportlab.pdfbase',
+        'reportlab.pdfbase.ttfonts',
+        'xlsxwriter',
+        'dateutil',
+        'six',
+        'cycler',
+        'kiwisolver',
+        'fonttools',
+        'setuptools',
+        'importlib_metadata',
+        'packaging',
+        'pyparsing',
+        'python_dateutil',
+        'charset-normalizer'
     ],
     hookspath=[],
     hooksconfig={},

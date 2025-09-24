@@ -126,7 +126,7 @@ class Daily3GReportGenerator:
 
         try:
             # Load the module
-            viz_module = self.load_module_from_file("DataVisualizationFor3G", "DataVisualizationFor3G.py")
+            viz_module = self.load_module_from_file("DataVisualizationFor3G", "3G/DataVisualizationFor3G.py")
 
             # Create processor instance
             processor = viz_module.ExcelCSVProcessorFor3G()
@@ -240,7 +240,7 @@ class Daily3GReportGenerator:
 
         try:
             # Load the module
-            kpi_module = self.load_module_from_file("3GKPIDashboardByRNC", "3GKPIDashboardByRNC.py")
+            kpi_module = self.load_module_from_file("3GKPIDashboardByRNC", "3G/3GKPIDashboardByRNC.py")
 
             # Use the functions from the module
             # Try BH dashboard first
@@ -285,7 +285,7 @@ class Daily3GReportGenerator:
 
         try:
             # Load the module
-            count_module = self.load_module_from_file("CountAbnormalCellFor3G", "CountAbnormalCellFor3G.py")
+            count_module = self.load_module_from_file("CountAbnormalCellFor3G", "3G/CountAbnormalCellFor3G.py")
 
             # Create processor instance
             processor = count_module.CountAbnormalCellFor3G()
